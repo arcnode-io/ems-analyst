@@ -1,0 +1,60 @@
+[project]
+name = "python-pydantic-ai"
+version = "1.0.0-beta"
+requires-python = "==3.13.2"
+dependencies = [
+    "pydantic>=2.9.2",
+    "pyyaml>=6.0.2",
+    "pydantic-ai>=0.0.49",
+    "asyncpg>=0.30.0",
+    "pgvector>=0.3.6",
+    "openai>=1.59.7",
+    "nomic[local]>=3.2.1",
+    "httpx>=0.27.0",
+    "python-mcp-server",
+]
+
+[dependency-groups]
+dev = [
+    "bandit>=1.8.0",
+    "black[d]>=26.3.1",
+    "mypy>=1.14.0",
+    "neo4j>=5.0.0",
+    "poethepoet>=0.32.0",
+    "pook>=2.1.1",
+    "pytest>=8.3.4",
+    "ruff>=0.8.4",
+    "pip-audit>=2.6.1",
+    "pytest-cov>=6.0.0",
+    "deptry>=0.23.0",
+    "pip>=25.1.1",
+    "testcontainers[postgres]>=4.9.0",
+    "pytest-asyncio>=0.25.2",
+    "python-pydantic-ai",
+    "python-mcp-server",
+]
+
+[tool.poe.tasks]
+depcheck = "deptry . --per-rule-ignores DEP002=python-mcp-server"
+format = "black ."
+lint = "ruff check"
+typecheck = "mypy  --install-types --non-interactive  --explicit-package-bases ."
+audit-src = "bandit -r src/* -s B101"
+audit-packages = "pip-audit --ignore-vuln GHSA-4xh5-x5gv-qwph"
+security = ["audit-src", "audit-packages"]
+checks = ["depcheck", "format", "lint", "typecheck", "security"]
+healthcheck = "bash -c 'curl -sf -o /dev/null -w \"OpenAI: %{http_code}\\n\" https://api.openai.com/v1/models -H \"Authorization: Bearer $OPENAI_API_KEY\" && curl -sf -o /dev/null -w \"OpenWeatherMap: %{http_code}\\n\" \"https://api.openweathermap.org/data/2.5/weather?q=London&appid=$OPENWEATHERMAP_API_KEY\" && echo APIS_READY'"
+unit = "pytest -vv src/python_pydantic_ai"
+integration = "pytest -vv tests/*"
+cover = "pytest -vv --cov=src/python_pydantic_ai"
+test = ["unit", "healthcheck", "integration"]
+review = "claude 'run code-reviewer agent against diff for quality and elegance'"
+commit = "bash -c 'uv run poe checks && uv run poe test && uv run poe review && git add -A && git cz && git push'"
+
+[tool.coverage.run]
+omit = ["*/test_*.py", "tests/*", "*/main.py", "*/config.py"]
+
+[tool.uv.sources]
+python-pydantic-ai = { workspace = true }
+python-mcp-server = { git = "https://gitlab.com/engineering-with-ai/software-python-mcp-server.git" }
+
