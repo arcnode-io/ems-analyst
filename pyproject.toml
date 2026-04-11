@@ -1,0 +1,48 @@
+[project]
+name = "python-fastapi"
+version = "1.0.0-beta"
+requires-python = "==3.13.2"
+dependencies = [
+    "classy-fastapi>=0.6.1",
+    "fastapi>=0.116.1",
+    "httpx>=0.28.1",
+    "pydantic>=2.11.7",
+    "pydantic-settings>=2.6.0",
+    "pyyaml>=6.0.2",
+    "uvicorn>=0.34.0",
+]
+
+[dependency-groups]
+dev = [
+    "bandit>=1.8.0",
+    "black[d]>=26.3.1",
+    "mypy>=1.14.0",
+    "poethepoet>=0.32.0",
+    "pook>=1.4.0",
+    "pytest>=8.3.4",
+    "pytest-asyncio>=0.24.0",
+    "ruff>=0.8.4",
+    "pip-audit>=2.6.1",
+    "pytest-cov>=6.0.0",
+    "deptry>=0.23.0",
+    "pip>=25.1.1",
+]
+
+[tool.poe.tasks]
+dev = "python -m src.main"
+depcheck = "deptry ."
+format = "black ."
+lint = "ruff check"
+typecheck = "mypy  --install-types --non-interactive  --explicit-package-bases ."
+audit-src = "bandit -r src/* -s B101"
+audit-packages = "pip-audit "
+security = ["audit-src", "audit-packages"]
+checks = ["depcheck", "format", "lint", "typecheck", "security"]
+unit = "pytest -vv src/*"
+integration = "pytest -vv tests/*"
+cover = "pytest -vv --cov"
+review = "claude 'run code-reviewer agent against diff for quality and elegance'"
+commit = "bash -c 'uv run poe checks && uv run poe cover && uv run poe review && git add -A && git cz && git push'"
+
+[tool.coverage.run]
+omit = ["*/test_*.py", "tests/*"]
