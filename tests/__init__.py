@@ -1,1 +1,1 @@
-"""Test package for python-pydantic-ai template."""
+"""Test package for ems-analyst-agent."""
