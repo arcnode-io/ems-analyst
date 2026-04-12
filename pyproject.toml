@@ -1,5 +1,5 @@
 [project]
-name = "python-fastapi"
+name = "ems-analyst-server"
 version = "1.0.0-beta"
 requires-python = "==3.13.2"
 dependencies = [
