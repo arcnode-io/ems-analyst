@@ -1,9 +1,12 @@
 """OpenAI embedder for query strings."""
 
+import logging
 import os
 from typing import Optional
 
 from openai import AsyncOpenAI
+
+log = logging.getLogger(__name__)
 
 
 class Embedder:
@@ -31,7 +34,11 @@ class Embedder:
 
     async def embed(self, text: str) -> list[float]:
         """Return embedding vector for text."""
-        response = await self._get_client().embeddings.create(
-            model=self.model, input=text
-        )
-        return response.data[0].embedding
+        try:
+            response = await self._get_client().embeddings.create(
+                model=self.model, input=text
+            )
+            return response.data[0].embedding
+        except Exception:
+            log.exception("OpenAI embed failed (model=%s, input_len=%d)", self.model, len(text))
+            raise

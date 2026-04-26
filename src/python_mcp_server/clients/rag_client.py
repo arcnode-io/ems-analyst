@@ -1,10 +1,13 @@
 """RAG client for pgvector similarity search."""
 
+import logging
 import os
 from typing import Final, Optional
 from urllib.parse import quote_plus
 
 import asyncpg
+
+log = logging.getLogger(__name__)
 from pgvector.asyncpg import register_vector
 
 from ..config import PostgresConfig
@@ -64,7 +67,12 @@ class RAGClient:
         IDs) come through the BM25 leg that pure cosine would miss.
         """
         query_embedding = await self.embedder.embed(query)
-        conn = await asyncpg.connect(self.db_url)
+        log.debug("Connecting to postgres for hybrid search (table=%s)", self.table_name)
+        try:
+            conn = await asyncpg.connect(self.db_url)
+        except Exception:
+            log.exception("asyncpg connect failed (table=%s)", self.table_name)
+            raise
         try:
             await register_vector(conn)
             # Reason: table_name is from cfg.yml, not user input - safe from injection
@@ -83,8 +91,12 @@ class RAGClient:
                 ORDER BY ts_rank_cd(content_tsv, plainto_tsquery('english', $1)) DESC
                 LIMIT $2
                 """  # noqa: S608
-            cosine_rows = await conn.fetch(cosine_sql, query_embedding, limit)
-            bm25_rows = await conn.fetch(bm25_sql, query, limit)
+            try:
+                cosine_rows = await conn.fetch(cosine_sql, query_embedding, limit)
+                bm25_rows = await conn.fetch(bm25_sql, query, limit)
+            except Exception:
+                log.exception("postgres query failed (table=%s)", self.table_name)
+                raise
         finally:
             await conn.close()
 

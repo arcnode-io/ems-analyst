@@ -1,7 +1,10 @@
 """Graphiti knowledge graph client for structured fact retrieval."""
 
+import logging
 import os
 from typing import Optional
+
+log = logging.getLogger(__name__)
 
 from graphiti_core import Graphiti
 
@@ -33,9 +36,13 @@ class GraphitiClient:
 
         Raises the underlying Graphiti error on failure — no silent empty list.
         """
-        raw_results = await self.graphiti.search(
-            query=query, center_node_uuid=center_node_uuid
-        )
+        try:
+            raw_results = await self.graphiti.search(
+                query=query, center_node_uuid=center_node_uuid
+            )
+        except Exception:
+            log.exception("graphiti search failed (query=%r)", query)
+            raise
         limited = raw_results[:limit] if raw_results else []
         return [
             SearchResult(
