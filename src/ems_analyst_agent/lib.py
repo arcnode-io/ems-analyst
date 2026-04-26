@@ -2,7 +2,7 @@ import asyncio
 import os
 from urllib.parse import urlparse
 
-from pydantic_ai import Agent as PydanticAgent, RunContext
+from pydantic_ai import Agent as PydanticAgent, RunContext, Tool
 
 from .memory import MemoryService
 from .tools.domain_mcp import create_mcp_server
@@ -59,11 +59,14 @@ class Agent:
             neo4j_password=neo4j_password,
         )
 
-        # Create Pydantic AI agent with dependency injection
-        self.agent = PydanticAgent(
+        # Create Pydantic AI agent with dependency injection.
+        # Explicit type param tells ty that AgentDepsT == AgentDeps for run_sync(deps=...).
+        self.agent: PydanticAgent[AgentDeps] = PydanticAgent(
             "openai:gpt-4o-mini",
             deps_type=AgentDeps,
-            tools=[get_weather_forecast],
+            # Tool() wrapper required for plain (non-RunContext) callables — pydantic-ai's
+            # tools= type expects Tool[T] | (RunContext[T], ...) -> Any
+            tools=[Tool(get_weather_forecast)],
             toolsets=[mcp_server],
             system_prompt=(
                 "You are a helpful assistant with access to knowledge graphs, "

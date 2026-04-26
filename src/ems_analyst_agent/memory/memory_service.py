@@ -145,8 +145,8 @@ class MemoryService:
             768-dimensional embedding vector
 
         """
-        import nomic
+        from nomic import embed
 
         # Reason: Nomic provides local embeddings without API calls
-        result = nomic.embed.text([text], model=self.config.embedding_model)  # type: ignore[attr-defined]
-        return result["embeddings"][0]  # type: ignore[no-any-return]
+        result = embed.text([text], model=self.config.embedding_model)
+        return result["embeddings"][0]

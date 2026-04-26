@@ -1,7 +1,12 @@
 # EMS Analyst Agent 🤖💬
 
-![](https://img.shields.io/gitlab/pipeline-status/arcnode-io/ems-analyst-agent?branch=main&logo=gitlab)![](https://img.shields.io/badge/llama3-gray?logo=meta)![](https://img.shields.io/badge/pydantic--ai-gray?logo=pydantic)![](https://img.shields.io/badge/neo4j-gray?logo=neo4j)![](https://img.shields.io/badge/postgresql-gray?logo=postgresql)
+![](https://img.shields.io/gitlab/pipeline-status/arcnode-io/ems-analyst-agent?branch=main&logo=gitlab)
 ![](https://gitlab.com/arcnode-io/ems-analyst-agent/badges/main/coverage.svg)
+![](https://img.shields.io/badge/ty_checked-gray?logo=astral)
+![](https://img.shields.io/badge/llama3-gray?logo=meta)
+![](https://img.shields.io/badge/pydantic--ai-gray?logo=pydantic)
+![](https://img.shields.io/badge/neo4j-gray?logo=neo4j)
+![](https://img.shields.io/badge/postgresql-gray?logo=postgresql)
 
 > Energy analyst agent with persistent memory, agentic RAG using vector DB, Neo4j knowledge graph powered by Graphiti, and external APIs for comprehensive energy market analysis
 
@@ -23,16 +28,13 @@ rectangle domain_mcp_server {
 cloud openweather 
 cloud yes_energy 
 cloud permutable 
-person user
-query_logic -u- knowledge_graph
-query_logic -u- vector_knowledge_base
-vector_chat_history -l- tool_api
-tool_api -u- query_logic
-tool_api -d- openweather
-tool_api -d- yes_energy
-tool_api -d- permutable
-conversational_llm -r- tool_api
-conversational_llm -l- user
+query_logic -u-> knowledge_graph: Cypher
+query_logic -u-> vector_knowledge_base: SQL
+tool_api -r-> vector_chat_history: SQL
+tool_api -d-> openweather: HTTP
+tool_api -d-> yes_energy: HTTP
+tool_api -d-> permutable: HTTP
+conversational_llm -r-> tool_api
 
 ```
 

@@ -109,7 +109,6 @@ def setup_logger(config: Config) -> None:
 
     # inits logger
     logging.basicConfig(
-        encoding="utf-8",
         level=config.log_level.value,
         handlers=[logging.StreamHandler()],
     )
