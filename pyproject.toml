@@ -16,16 +16,17 @@ dependencies = [
 dev = [
     "bandit>=1.8.0",
     "black[d]>=26.3.1",
-    "mypy>=1.14.0",
+    "deptry>=0.23.0",
+    "pip>=25.1.1",
+    "pip-audit>=2.6.1",
     "poethepoet>=0.32.0",
     "pook>=1.4.0",
     "pytest>=8.3.4",
     "pytest-asyncio>=0.24.0",
-    "ruff>=0.8.4",
-    "pip-audit>=2.6.1",
     "pytest-cov>=6.0.0",
-    "deptry>=0.23.0",
-    "pip>=25.1.1",
+    "ruff>=0.8.4",
+    "ty>=0.0.18",
+    "types-pyyaml>=6.0",
 ]
 
 [tool.poe.tasks]
@@ -33,7 +34,7 @@ dev = "python -m src.main"
 depcheck = "deptry ."
 format = "black ."
 lint = "ruff check"
-typecheck = "mypy  --install-types --non-interactive  --explicit-package-bases ."
+typecheck = "ty check"
 audit-src = "bandit -r src/* -s B101"
 audit-packages = "pip-audit "
 security = ["audit-src", "audit-packages"]
