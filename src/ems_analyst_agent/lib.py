@@ -35,10 +35,8 @@ class Agent:
         env_file: secrets.env). Graph backend is read by the MCP server
         from the same env, no threading needed.
         """
-        vector_db_url = os.environ["VECTOR_URL"]
-
         # Create memory service for semantic conversation storage
-        self.memory_service = MemoryService(vector_db_url)
+        self.memory_service = MemoryService(os.environ["VECTOR_URL"])
 
         # MCP server reads its graph + vector backends from the parent process env
         # (GRAPH_URL or NEPTUNE_HOST+AOSS_HOST, plus VECTOR_URL). Compose
