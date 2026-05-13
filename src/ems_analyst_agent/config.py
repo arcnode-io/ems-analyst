@@ -18,11 +18,14 @@ class LogLevel(enum.StrEnum):
 
 
 class Config(BaseModel):
-    """Application configuration settings."""
+    """Application configuration settings.
+
+    URLs are NOT held here — they're read from process env at consumption
+    time (compose env_file: config.env + secrets.env). cfg.yml stays for
+    non-secret, non-deployment-varying knobs only.
+    """
 
     log_level: LogLevel
-    graph_db_url: str
-    vector_db_url: str
     embedding_provider: Literal["openai", "nomic"] = "openai"
     embedding_model: str = "text-embedding-3-small"
     e2e: bool = False

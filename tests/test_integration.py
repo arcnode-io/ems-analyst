@@ -2,6 +2,7 @@ import asyncio
 import os
 import time
 from collections.abc import Generator
+from urllib.parse import urlparse
 
 import asyncpg
 import pook
@@ -66,9 +67,17 @@ def test_containers() -> Generator[tuple[str, str]]:
 
         asyncio.run(seed_neo4j())
 
-        # Setup pgvector
+        # Setup pgvector — connect via kwargs so passwords with special
+        # chars (@, !, etc. — present in our shared dev creds) don't trip
+        # asyncpg's DSN parser.
         async def setup_pgvector() -> None:
-            conn = await asyncpg.connect(postgres.url)
+            conn = await asyncpg.connect(
+                host=postgres.host,
+                port=postgres.port,
+                user="postgres",
+                password=os.environ["POSTGRES_PASSWORD"],
+                database="postgres",
+            )
             await conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
             await register_vector(conn)
             await conn.execute("""
@@ -90,6 +99,14 @@ def test_containers() -> Generator[tuple[str, str]]:
 
         asyncio.run(setup_pgvector())
 
+        # python-mcp-server's GraphitiClient.from_env() expects creds embedded
+        # in GRAPH_URL (Aura-style packaging). Pack them in here so the child
+        # MCP process inherits a working backend handle.
+        parsed = urlparse(neo4j.url)
+        os.environ["GRAPH_URL"] = (
+            f"{parsed.scheme}://neo4j:{neo4j_password}@{parsed.netloc}"
+        )
+
         yield neo4j.url, postgres.url
 
 
@@ -99,7 +116,9 @@ class TestIntegration:
     def test_mcp(self, test_containers: tuple[str, str]) -> None:
         """Test MCP domain server integration with real Neo4j."""
         neo4j_url, pg_url = test_containers
-        agent = Agent(graph_db_url=neo4j_url, vector_db_url=pg_url)
+        os.environ["VECTOR_URL"] = pg_url
+        os.environ["GRAPH_URL"] = neo4j_url
+        agent = Agent()
         result = agent.chat(
             "what is the relationship b/w my company and department of defense?"
         )
@@ -120,7 +139,9 @@ class TestIntegration:
             )
 
         neo4j_url, pg_url = test_containers
-        agent = Agent(graph_db_url=neo4j_url, vector_db_url=pg_url)
+        os.environ["VECTOR_URL"] = pg_url
+        os.environ["GRAPH_URL"] = neo4j_url
+        agent = Agent()
         result = agent.chat("Whats the weather forecast for france tomorrow?")
 
         assert (
@@ -135,7 +156,9 @@ class TestIntegration:
     def test_memory(self, test_containers: tuple[str, str]) -> None:
         """Test agent semantic memory with real pgvector container."""
         neo4j_url, pg_url = test_containers
-        agent = Agent(graph_db_url=neo4j_url, vector_db_url=pg_url)
+        os.environ["VECTOR_URL"] = pg_url
+        os.environ["GRAPH_URL"] = neo4j_url
+        agent = Agent()
 
         agent.chat("My favorite color is blue")
         agent.chat("When should I buy and sell energy stocks?")

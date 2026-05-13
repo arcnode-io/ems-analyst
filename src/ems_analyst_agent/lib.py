@@ -1,6 +1,5 @@
 import asyncio
 import os
-from urllib.parse import urlparse
 
 from pydantic_ai import Agent as PydanticAgent, RunContext, Tool
 
@@ -12,52 +11,39 @@ from .tools.weather_api import get_weather_forecast
 class AgentDeps:
     """Dependencies injected into agent tools."""
 
-    def __init__(
-        self, graph_db_url: str, vector_db_url: str, memory_service: MemoryService
-    ) -> None:
-        """Initialize dependencies with database URLs and memory service.
+    def __init__(self, memory_service: MemoryService) -> None:
+        """Initialize dependencies with the memory service.
+
+        Backend URLs (graph + vector) are no longer threaded through here.
+        The MCP server reads GRAPH_URL or NEPTUNE_HOST + AOSS_HOST from
+        the process env via GraphitiClient.from_env(). The MemoryService
+        reads VECTOR_URL from env at Agent construction time.
 
         Args:
-            graph_db_url: Connection URL for the knowledge graph database
-            vector_db_url: Connection URL for the vector/semantic memory database
             memory_service: Service for semantic memory operations
-
         """
-        self.graph_db_url = graph_db_url
-        self.vector_db_url = vector_db_url
         self.memory_service = memory_service
 
 
 class Agent:
     """Agent that uses APIs, MCP servers, and memory to complete tasks."""
 
-    def __init__(self, graph_db_url: str, vector_db_url: str) -> None:
-        """Initialize the agent with database connections.
+    def __init__(self) -> None:
+        """Initialize the agent.
 
-        Args:
-            graph_db_url: Connection URL for the knowledge graph database
-            vector_db_url: Connection URL for the vector/semantic memory database
-
+        VECTOR_URL is sourced from process env (compose populates via
+        env_file: secrets.env). Graph backend is read by the MCP server
+        from the same env, no threading needed.
         """
-        self.graph_db_url = graph_db_url
-        self.vector_db_url = vector_db_url
+        vector_db_url = os.environ["VECTOR_URL"]
 
         # Create memory service for semantic conversation storage
         self.memory_service = MemoryService(vector_db_url)
 
-        # Extract Neo4j password from URL or environment
-        # Reason: MCP server needs password to connect to Neo4j
-        parsed = urlparse(graph_db_url)
-        neo4j_password: str = (
-            parsed.password or os.getenv("NEO4J_PASSWORD", "") or "testpassword123"
-        )
-
-        # Create MCP server for knowledge graph access
-        mcp_server = create_mcp_server(
-            neo4j_url=graph_db_url,
-            postgres_url=vector_db_url,
-            neo4j_password=neo4j_password,
-        )
+        # MCP server reads its graph + vector backends from the parent process env
+        # (GRAPH_URL or NEPTUNE_HOST+AOSS_HOST, plus VECTOR_URL). Compose
+        # populates these via env_file; tests set them before constructing Agent.
+        mcp_server = create_mcp_server()
 
         # Create Pydantic AI agent with dependency injection.
         # Explicit type param tells ty that AgentDepsT == AgentDeps for run_sync(deps=...).
@@ -108,11 +94,7 @@ class Agent:
 
         """
         # Create dependencies for this chat session
-        deps = AgentDeps(
-            graph_db_url=self.graph_db_url,
-            vector_db_url=self.vector_db_url,
-            memory_service=self.memory_service,
-        )
+        deps = AgentDeps(memory_service=self.memory_service)
 
         # Run the agent synchronously
         result = self.agent.run_sync(prompt, deps=deps)

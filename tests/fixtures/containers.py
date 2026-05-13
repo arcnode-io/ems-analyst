@@ -3,6 +3,7 @@
 from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from urllib.parse import quote_plus
 
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
@@ -77,10 +78,13 @@ def start_postgres(
         image, username=username, password=password, dbname=dbname
     ) as c:
         port = int(c.get_exposed_port(5432))
+        # quote_plus the pw so URL stays parseable when the shared dev
+        # creds contain `@` or `!` — real consumers (MemoryService etc.)
+        # use postgres.url directly, not kwargs.
         yield Container(
             host="localhost",
             port=port,
-            url=f"postgres://{username}:{password}@localhost:{port}/{dbname}",
+            url=f"postgres://{username}:{quote_plus(password)}@localhost:{port}/{dbname}",
         )
 
 

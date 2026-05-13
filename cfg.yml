@@ -1,15 +1,11 @@
 local:
   log_level: DEBUG
-  graph_db_url: "bolt://localhost:7687"
-  vector_db_url: "postgresql://postgres:testpass@localhost:5432/semantic_memory"
   embedding_provider: "openai"
   embedding_model: "text-embedding-3-small"
   e2e: false
 
 beta:
   log_level: INFO
-  graph_db_url: "bolt://production:7687"
-  vector_db_url: "postgresql://postgres:prodpass@localhost:5432/semantic_memory"
   embedding_provider: "openai"
   embedding_model: "text-embedding-3-large"
   e2e: true
