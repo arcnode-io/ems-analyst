@@ -106,8 +106,10 @@ def start_neo4j(password: str) -> Generator[Container]:
 
     with c:
         mapped = int(c.get_exposed_port(7687))
+        # Embed creds in URL (Aura-style) so consumers using a single
+        # GRAPH_URL env var get authenticated cleanly.
         yield Container(
             host="localhost",
             port=mapped,
-            url=f"bolt://localhost:{mapped}",
+            url=f"bolt://neo4j:{quote_plus(password)}@localhost:{mapped}",
         )

@@ -1,5 +1,6 @@
 """MCP server integration for knowledge graph and vector search."""
 
+import os
 from typing import Final
 
 from pydantic_ai.mcp import MCPServerStdio
@@ -14,11 +15,16 @@ def create_mcp_server() -> MCPServerStdio:
       - GRAPH_URL → Neo4j / Aura (commercial)
       - NEPTUNE_HOST + AOSS_HOST → Neptune + AOSS (defense)
       - VECTOR_URL → pgvector (both variants)
-    MCPServerStdio inherits this process's env by default — compose populates
-    it via env_file, tests set env vars directly. No explicit env override.
+    Compose populates these via env_file; tests set them directly.
+
+    `env=os.environ.copy()` is required: pydantic-ai's MCPServerStdio
+    defaults `env=None`, which means the subprocess inherits NOTHING from
+    the parent. Without this, GRAPH_URL/VECTOR_URL never reach the child
+    and the client falls back to localhost defaults.
     """
     return MCPServerStdio(
         command="python",
         args=["-m", "python_mcp_server"],
         timeout=MCP_SERVER_TIMEOUT,
+        env=os.environ.copy(),
     )

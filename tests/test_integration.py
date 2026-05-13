@@ -36,8 +36,12 @@ def test_containers() -> Generator[tuple[str, str]]:
         max_retries = 30
         for attempt in range(max_retries):
             try:
+                # neo4j.url carries embedded creds for the GRAPH_URL contract;
+                # AsyncGraphDatabase.driver rejects creds-in-URI, so connect
+                # via plain host:port and pass auth= separately.
                 driver = AsyncGraphDatabase.driver(
-                    neo4j.url, auth=("neo4j", neo4j_password)
+                    f"bolt://{neo4j.host}:{neo4j.port}",
+                    auth=("neo4j", neo4j_password),
                 )
 
                 async def test_connection(d: AsyncDriver = driver) -> None:
@@ -54,8 +58,10 @@ def test_containers() -> Generator[tuple[str, str]]:
 
         # Seed Neo4j
         async def seed_neo4j() -> None:
+            # Strip creds from neo4j.url for driver call (see above).
             driver = AsyncGraphDatabase.driver(
-                neo4j.url, auth=("neo4j", neo4j_password)
+                f"bolt://{neo4j.host}:{neo4j.port}",
+                auth=("neo4j", neo4j_password),
             )
             async with driver.session() as session:
                 await session.run("""
