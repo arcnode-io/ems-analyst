@@ -23,11 +23,19 @@ class Config(BaseModel):
     Connection URLs are NOT held here — read from process env at consume
     time (GRAPH_URL / NEPTUNE_HOST / AOSS_HOST / VECTOR_URL). cfg.yml
     stays for non-secret, non-deployment-varying knobs.
+
+    Seed URLs (vector_seed_url, graph_neo4j_seed_url) are public S3
+    paths consumed by seed.py at boot. Either may be null to disable
+    seeding of that slice (e.g. local dev against a pre-populated DB).
+    Naming follows engine (neo4j vs neptune), not deployment flavor —
+    same cypher dump restores on Aura cloud and ISO self-hosted alike.
     """
 
     log_level: LogLevel
     embeddings_table: str
     embedding_model: str
+    vector_seed_url: str | None = None
+    graph_neo4j_seed_url: str | None = None
 
 
 class _ConfigMap(BaseModel):

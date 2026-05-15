@@ -1,0 +1,117 @@
+"""Boot-time DB seeding for vector + graph slices.
+
+Mirrors ems-device-api/src/seed/seed_from_file.ts contract:
+  - URL set + marker present  → skip
+  - URL set + marker absent   → fetch + restore + write marker
+  - URL unset                 → start empty (log + skip)
+  - any fetch / restore error → fatal, propagate
+
+Naming follows engine, not deployment — Neo4j cypher dump restores on
+Aura cloud and ISO self-hosted alike via the bolt protocol.
+
+Sources (public S3, no auth):
+  vector        → vector.sql.gz             (plain pg_dump of knowledge)
+  graph (Neo4j) → graph-neo4j.cypher.gz     (apoc.export.cypher.all output)
+  graph (Neptune) → TODO when defense customer comes online; Bulk
+                    Loader REST against s3://arcnode-public/seed/graph-neptune/
+
+Markers:
+  vector → arcnode_seed_markers row in postgres, slice='vector'
+  graph  → :ArcnodeSeedMarker {slice:'graph'} node
+"""
+
+import gzip
+import logging
+import os
+import urllib.request
+
+import asyncpg
+from neo4j import AsyncGraphDatabase
+
+from .clients.graphiti_client import _split_neo4j_url
+
+logger = logging.getLogger(__name__)
+
+VECTOR_MARKER_SLICE = "vector"
+GRAPH_MARKER_SLICE = "graph"
+
+
+def _fetch_gunzip(url: str) -> str:
+    """Fetch + gunzip a public S3 .gz artifact, return decoded text."""
+    with urllib.request.urlopen(url) as resp:  # nosec B310  # noqa: S310
+        return gzip.decompress(resp.read()).decode()
+
+
+async def seed_vector(seed_url: str) -> None:
+    """Restore vector dump into VECTOR_URL postgres if marker absent."""
+    conn = await asyncpg.connect(os.environ["VECTOR_URL"])
+    try:
+        await conn.execute(
+            "CREATE TABLE IF NOT EXISTS arcnode_seed_markers ("
+            "slice TEXT PRIMARY KEY, seeded_at TIMESTAMPTZ DEFAULT now())"
+        )
+        marker = await conn.fetchval(
+            "SELECT 1 FROM arcnode_seed_markers WHERE slice=$1",
+            VECTOR_MARKER_SLICE,
+        )
+        if marker:
+            logger.info("vector slice already seeded; skipping")
+            return
+        logger.info("seeding vector slice from %s", seed_url)
+        sql = _fetch_gunzip(seed_url)
+        await conn.execute(sql)
+        await conn.execute(
+            "INSERT INTO arcnode_seed_markers (slice) VALUES ($1) "
+            "ON CONFLICT DO NOTHING",
+            VECTOR_MARKER_SLICE,
+        )
+        logger.info("vector slice seeded")
+    finally:
+        await conn.close()
+
+
+async def seed_graph_neo4j(seed_url: str) -> None:
+    """Restore cypher dump into GRAPH_URL Neo4j if marker absent."""
+    uri, user, password = _split_neo4j_url(os.environ["GRAPH_URL"])
+    if user is None or password is None:
+        raise RuntimeError("GRAPH_URL must include user:password (Aura format)")
+    driver = AsyncGraphDatabase.driver(uri, auth=(user, password))
+    try:
+        async with driver.session() as session:
+            result = await session.run(
+                "MATCH (m:ArcnodeSeedMarker {slice: $slice}) RETURN m LIMIT 1",
+                slice=GRAPH_MARKER_SLICE,
+            )
+            if await result.single():
+                logger.info("graph slice already seeded; skipping")
+                return
+        logger.info("seeding graph slice from %s", seed_url)
+        cypher_script = _fetch_gunzip(seed_url)
+        async with driver.session() as session:
+            for raw in cypher_script.split(";\n"):
+                stmt = raw.strip()
+                if stmt:
+                    # Reason: stmt is from our own dump file — driver's
+                    # LiteralString constraint is for user-input safety,
+                    # doesn't apply to a controlled artifact.
+                    await session.run(stmt)  # ty: ignore[invalid-argument-type]
+            await session.run(
+                "MERGE (m:ArcnodeSeedMarker {slice: $slice}) "
+                "ON CREATE SET m.seeded_at = datetime()",
+                slice=GRAPH_MARKER_SLICE,
+            )
+        logger.info("graph slice seeded")
+    finally:
+        await driver.close()
+
+
+async def seed_all(vector_url: str | None, graph_neo4j_url: str | None) -> None:
+    """Run available seeds at boot. Skips a slice when its env conn is unset."""
+    if vector_url and os.environ.get("VECTOR_URL"):
+        await seed_vector(vector_url)
+    else:
+        logger.info("vector seed skipped (no VECTOR_URL or seed URL)")
+    if graph_neo4j_url and os.environ.get("GRAPH_URL"):
+        await seed_graph_neo4j(graph_neo4j_url)
+    else:
+        logger.info("graph neo4j seed skipped (no GRAPH_URL or seed URL)")

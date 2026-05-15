@@ -2,8 +2,15 @@ local:
   log_level: DEBUG
   embeddings_table: knowledge
   embedding_model: text-embedding-3-small
+  # Seed slices null in local — assume devs point at pre-populated DBs
+  # (testcontainers fixtures or a personal scratch instance). Set the
+  # URLs below to exercise the boot-seed path locally.
+  vector_seed_url: null
+  graph_neo4j_seed_url: null
 
 beta:
   log_level: INFO
   embeddings_table: knowledge
   embedding_model: text-embedding-3-small
+  vector_seed_url: https://arcnode-public.s3.us-east-1.amazonaws.com/seed/vector.sql.gz
+  graph_neo4j_seed_url: https://arcnode-public.s3.us-east-1.amazonaws.com/seed/graph-neo4j.cypher.gz
