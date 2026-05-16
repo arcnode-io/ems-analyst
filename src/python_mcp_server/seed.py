@@ -20,6 +20,7 @@ Markers:
   graph  → :ArcnodeSeedMarker {slice:'graph'} node
 """
 
+import asyncio
 import gzip
 import logging
 import os
@@ -42,26 +43,54 @@ def _fetch_gunzip(url: str) -> str:
         return gzip.decompress(resp.read()).decode()
 
 
-def _strip_psql_metacommands(sql: str) -> str:
-    """Remove psql meta-commands (lines starting with backslash).
+async def _psql_apply(dump_url: str, conn_url: str) -> None:
+    """Stream the gzipped dump through `psql -f -` for restore.
 
-    pg_dump 16+ emits `\\restrict` / `\\unrestrict` for security around
-    plain-format dumps. Those are psql-specific — asyncpg's `execute`
-    runs raw SQL only and chokes on them. The data + schema statements
-    are unaffected by stripping these.
+    asyncpg.execute can't reliably run a multi-statement pg_dump:
+    psql metacommands (\\restrict), COPY ... FROM stdin, dollar-quoted
+    function bodies, and embedded newlines in INSERT VALUES all need
+    a libpq client (psql), not asyncpg's simple query path. psql
+    handles all of it natively.
+
+    Requires `psql` binary in PATH — see consumer Dockerfile (must
+    install postgresql-client alongside python).
     """
-    return "\n".join(
-        line for line in sql.splitlines() if not line.lstrip().startswith("\\")
+    with urllib.request.urlopen(dump_url) as resp:  # nosec B310  # noqa: S310
+        sql = gzip.decompress(resp.read())
+    proc = await asyncio.create_subprocess_exec(
+        "psql",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "--single-transaction",
+        "-d",
+        conn_url,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
     )
+    _, stderr = await proc.communicate(sql)
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"psql restore failed (rc={proc.returncode}): "
+            f"{stderr.decode(errors='replace')[-500:]}"
+        )
 
 
 async def seed_vector(seed_url: str) -> None:
     """Restore vector dump into VECTOR_URL postgres if marker absent.
 
-    Restore + marker write run in one transaction — partial failure
-    rolls back so a retry starts from a clean state.
+    Restore via psql -f (subprocess) — see _psql_apply for why asyncpg
+    can't run pg_dump output directly. Marker write goes through
+    asyncpg afterwards so we can use a parameterized INSERT.
+
+    Failure modes:
+      - psql exits non-zero → RuntimeError; marker not written; safe to
+        retry (psql will hit "already exists" on re-create unless the
+        caller cleans up; recommended retry path = manually
+        `DROP SCHEMA public CASCADE; CREATE SCHEMA public;`)
     """
-    conn = await asyncpg.connect(os.environ["VECTOR_URL"])
+    conn_url = os.environ["VECTOR_URL"]
+    conn = await asyncpg.connect(conn_url)
     try:
         await conn.execute(
             "CREATE TABLE IF NOT EXISTS arcnode_seed_markers ("
@@ -75,14 +104,12 @@ async def seed_vector(seed_url: str) -> None:
             logger.info("vector slice already seeded; skipping")
             return
         logger.info("seeding vector slice from %s", seed_url)
-        sql = _strip_psql_metacommands(_fetch_gunzip(seed_url))
-        async with conn.transaction():
-            await conn.execute(sql)
-            await conn.execute(
-                "INSERT INTO arcnode_seed_markers (slice) VALUES ($1) "
-                "ON CONFLICT DO NOTHING",
-                VECTOR_MARKER_SLICE,
-            )
+        await _psql_apply(seed_url, conn_url)
+        await conn.execute(
+            "INSERT INTO arcnode_seed_markers (slice) VALUES ($1) "
+            "ON CONFLICT DO NOTHING",
+            VECTOR_MARKER_SLICE,
+        )
         logger.info("vector slice seeded")
     finally:
         await conn.close()
