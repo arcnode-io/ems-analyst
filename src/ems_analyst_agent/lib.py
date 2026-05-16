@@ -1,9 +1,17 @@
+"""Agent — pydantic-ai chat loop with MCP tools + semantic memory.
+
+Per ADR-024 + portal self-serve rule, NO third-party LLM API keys —
+Bedrock for cloud customers, Ollama for airgapped. Same provider drives
+chat AND memory embeddings; one llm_provider per customer block.
+"""
+
 import asyncio
 import os
 
 from pydantic_ai import Agent as PydanticAgent, RunContext, Tool
+from python_mcp_server.clients import make_embedder
 
-from .config import load_config
+from .config import chat_model, load_config
 from .memory import MemoryService
 from .tools.domain_mcp import create_mcp_server
 from .tools.weather_api import get_weather_forecast
@@ -13,15 +21,10 @@ class AgentDeps:
     """Dependencies injected into agent tools."""
 
     def __init__(self, memory_service: MemoryService) -> None:
-        """Initialize dependencies with the memory service.
+        """Initialize deps. memory_service is the only injected dependency.
 
-        Backend URLs (graph + vector) are no longer threaded through here.
-        The MCP server reads GRAPH_URL or NEPTUNE_HOST + AOSS_HOST from
-        the process env via GraphitiClient.from_env(). The MemoryService
-        reads VECTOR_URL from env at Agent construction time.
-
-        Args:
-            memory_service: Service for semantic memory operations
+        Backend URLs (graph + vector) are read from process env at the
+        client layer — MemoryService takes VECTOR_URL at construction.
         """
         self.memory_service = memory_service
 
@@ -32,15 +35,16 @@ class Agent:
     def __init__(self) -> None:
         """Initialize the agent.
 
-        VECTOR_URL is sourced from process env (compose populates via
-        env_file: secrets.env). Graph backend is read by the MCP server
-        from the same env, no threading needed. Chat model id comes from
-        cfg.yml (openai for local, bedrock for cloud per ADR-024).
+        VECTOR_URL is sourced from process env (compose env_file
+        secrets.env). Chat model + embedder both come from cfg.yml's
+        per-customer block.
         """
         config = load_config()
-
-        # Create memory service for semantic conversation storage
-        self.memory_service = MemoryService(os.environ["VECTOR_URL"])
+        embedder = make_embedder(config.settings)
+        self.memory_service = MemoryService(
+            postgres_url=os.environ["VECTOR_URL"],
+            embedder=embedder,
+        )
 
         # MCP server reads its graph + vector backends from the parent process env
         # (GRAPH_URL or NEPTUNE_HOST+AOSS_HOST, plus VECTOR_URL). Compose
@@ -48,9 +52,8 @@ class Agent:
         mcp_server = create_mcp_server()
 
         # Create Pydantic AI agent with dependency injection.
-        # Explicit type param tells ty that AgentDepsT == AgentDeps for run_sync(deps=...).
         self.agent: PydanticAgent[AgentDeps] = PydanticAgent(
-            config.chat_model_id,
+            chat_model(config.settings),
             deps_type=AgentDeps,
             # Tool() wrapper required for plain (non-RunContext) callables — pydantic-ai's
             # tools= type expects Tool[T] | (RunContext[T], ...) -> Any
@@ -67,8 +70,6 @@ class Agent:
         @self.agent.system_prompt
         async def inject_memories(ctx: RunContext[AgentDeps]) -> str:
             """Retrieve and inject relevant memories into system prompt."""
-            # Get the current user prompt from context
-            # Reason: We need to search for memories relevant to the current query
             if ctx.prompt:
                 query_embedding = await ctx.deps.memory_service.generate_embedding(
                     str(ctx.prompt)

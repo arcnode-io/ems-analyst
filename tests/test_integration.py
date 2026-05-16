@@ -90,12 +90,12 @@ def test_containers() -> Generator[tuple[str, str]]:
                 CREATE TABLE conversation_memory (
                     id SERIAL PRIMARY KEY,
                     content TEXT NOT NULL,
-                    embedding vector(1536),
+                    embedding vector(1024),
                     timestamp TIMESTAMPTZ DEFAULT NOW()
                 )
                 """)
-            # Seed initial memory
-            dummy_embedding = [0.1] * 1536
+            # Seed initial memory — 1024d to match ADR-024 (Titan + Qwen3 truncated)
+            dummy_embedding = [0.1] * 1024
             await conn.execute(
                 "INSERT INTO conversation_memory (content, embedding) VALUES ($1, $2)",
                 "User stated: My favorite color is blue",

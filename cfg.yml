@@ -1,15 +1,36 @@
 local:
   log_level: DEBUG
-  chat_model_id: "openai:gpt-4o-mini"
-  embedding_provider: "openai"
-  embedding_model: "text-embedding-3-small"
   e2e: false
+  customers:
+    # Local dev points at arcnode's beta Ollama for free dogfood —
+    # matches the airgapped customer profile (ADR-024).
+    defense:
+      llm_provider: ollama
+      ollama_base_url: http://173.211.12.43:11434/v1
+      ollama_chat_model: qwen3.6:35b
+      ollama_embedding_model: qwen3-embedding:4b
+    commercial:
+      llm_provider: ollama
+      ollama_base_url: http://173.211.12.43:11434/v1
+      ollama_chat_model: qwen3.6:35b
+      ollama_embedding_model: qwen3-embedding:4b
+    airgapped:
+      llm_provider: ollama
+      ollama_base_url: http://173.211.12.43:11434/v1
+      ollama_chat_model: qwen3.6:35b
+      ollama_embedding_model: qwen3-embedding:4b
 
 beta:
   log_level: INFO
-  # Cloud chat: Sonnet 4.6 via CRIS (us.* prefix mandatory — direct
-  # anthropic.* IDs need provisioned throughput per ADR-024).
-  chat_model_id: "bedrock:us.anthropic.claude-sonnet-4-6"
-  embedding_provider: "openai"
-  embedding_model: "text-embedding-3-large"
   e2e: false
+  customers:
+    defense:
+      llm_provider: bedrock
+      # CRIS prefix mandatory per ADR-024 — direct anthropic.* IDs need
+      # provisioned throughput.
+      bedrock_chat_model_id: us.anthropic.claude-sonnet-4-6
+      bedrock_embedding_model_id: amazon.titan-embed-text-v2:0
+    commercial:
+      llm_provider: bedrock
+      bedrock_chat_model_id: us.anthropic.claude-sonnet-4-6
+      bedrock_embedding_model_id: amazon.titan-embed-text-v2:0
