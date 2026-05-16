@@ -10,23 +10,29 @@ Naming follows engine, not deployment — Neo4j cypher dump restores on
 Aura cloud and ISO self-hosted alike via the bolt protocol.
 
 Sources (public S3, no auth):
-  vector        → vector.sql.gz             (plain pg_dump of knowledge)
+  vector        → vector-cloud.sql.gz | vector-airgapped.sql.gz (pg_dump)
   graph (Neo4j) → graph-neo4j.cypher.gz     (apoc.export.cypher.all output)
-  graph (Neptune) → TODO when defense customer comes online; Bulk
-                    Loader REST against s3://arcnode-public/seed/graph-neptune/
+  graph (Neptune) → s3://arcnode-public/seed/graph-neptune/{vertices,edges}.csv
+                    loaded via Neptune Bulk Loader REST API (sigv4 IAM auth)
 
 Markers:
   vector → arcnode_seed_markers row in postgres, slice='vector'
-  graph  → :ArcnodeSeedMarker {slice:'graph'} node
+  graph  → :ArcnodeSeedMarker {slice:'graph'} node (Neo4j or Neptune)
 """
 
 import asyncio
 import gzip
+import json
 import logging
 import os
+import time
 import urllib.request
 
 import asyncpg
+import boto3
+import httpx
+from botocore.auth import SigV4Auth
+from botocore.awsrequest import AWSRequest
 from neo4j import AsyncGraphDatabase, AsyncManagedTransaction
 
 from .clients.graphiti_client import _split_neo4j_url
@@ -35,6 +41,19 @@ logger = logging.getLogger(__name__)
 
 VECTOR_MARKER_SLICE = "vector"
 GRAPH_MARKER_SLICE = "graph"
+
+# Neptune Bulk Loader payload constants — see
+# https://docs.aws.amazon.com/neptune/latest/userguide/bulk-load.html
+NEPTUNE_S3_SOURCE = "s3://arcnode-public/seed/graph-neptune/"
+NEPTUNE_LOAD_POLL_INTERVAL_SEC = 10
+NEPTUNE_LOAD_MAX_WAIT_SEC = 1800  # 30 min — bulk load of ~400MB is < 5 min typical
+# Terminal load states; everything else is in-progress.
+_NEPTUNE_LOAD_DONE_STATES = {
+    "LOAD_COMPLETED",
+    "LOAD_FAILED",
+    "LOAD_CANCELLED_BY_USER",
+    "LOAD_CANCELLED_DUE_TO_ERRORS",
+}
 
 
 def _fetch_gunzip(url: str) -> str:
@@ -158,13 +177,153 @@ async def seed_graph_neo4j(seed_url: str) -> None:
         await driver.close()
 
 
+def _sigv4_headers(method: str, url: str, body: bytes = b"") -> dict[str, str]:
+    """Sign a request with SigV4 against the neptune-db service.
+
+    Returns the headers to attach to the actual httpx call. Uses the
+    default boto3 credential chain → EC2 instance role in prod.
+    """
+    session = boto3.Session()
+    creds = session.get_credentials()
+    if creds is None:
+        raise RuntimeError("no AWS credentials available for Neptune sigv4")
+    region = os.environ.get("AWS_REGION", session.region_name or "us-east-1")
+    req = AWSRequest(method=method, url=url, data=body)
+    SigV4Auth(creds, "neptune-db", region).add_auth(req)
+    return dict(req.headers)
+
+
+async def _neptune_opencypher(host: str, query: str) -> dict:
+    """POST an openCypher query to a Neptune cluster; return JSON results."""
+    url = f"https://{host}:8182/opencypher"
+    body = json.dumps({"query": query}).encode()
+    headers = _sigv4_headers("POST", url, body)
+    headers["Content-Type"] = "application/json"
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(url, content=body, headers=headers)
+        resp.raise_for_status()
+        return resp.json()
+
+
+async def _neptune_has_marker(host: str) -> bool:
+    """Return True if the ArcnodeSeedMarker {slice:'graph'} node exists."""
+    result = await _neptune_opencypher(
+        host,
+        "MATCH (m:ArcnodeSeedMarker) WHERE m.slice = 'graph' RETURN m LIMIT 1",
+    )
+    return bool(result.get("results"))
+
+
+async def _neptune_write_marker(host: str) -> None:
+    """Set the seed marker via openCypher MERGE."""
+    await _neptune_opencypher(
+        host,
+        "MERGE (m:ArcnodeSeedMarker {slice: 'graph'}) "
+        "ON CREATE SET m.seeded_at = datetime()",
+    )
+
+
+async def _neptune_start_load(host: str, loader_role_arn: str) -> str:
+    """Kick off the Bulk Loader; return loadId."""
+    url = f"https://{host}:8182/loader"
+    region = os.environ.get("AWS_REGION", "us-east-1")
+    body = json.dumps(
+        {
+            "source": NEPTUNE_S3_SOURCE,
+            "format": "csv",
+            "iamRoleArn": loader_role_arn,
+            "region": region,
+            # CSVs are pre-validated; bail on the first bad row instead
+            # of partial loads we'd have to detect post-hoc.
+            "failOnError": "TRUE",
+            "parallelism": "MEDIUM",
+            "updateSingleCardinalityProperties": "FALSE",
+            "queueRequest": "TRUE",
+        }
+    ).encode()
+    headers = _sigv4_headers("POST", url, body)
+    headers["Content-Type"] = "application/json"
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(url, content=body, headers=headers)
+        resp.raise_for_status()
+        payload = resp.json()["payload"]
+        return payload["loadId"]
+
+
+async def _neptune_wait_for_load(host: str, load_id: str) -> None:
+    """Poll loader status until terminal; raise on failure."""
+    url = f"https://{host}:8182/loader/{load_id}"
+    deadline = time.monotonic() + NEPTUNE_LOAD_MAX_WAIT_SEC
+    while True:
+        headers = _sigv4_headers("GET", url)
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(url, headers=headers)
+            resp.raise_for_status()
+            overall = resp.json()["payload"]["overallStatus"]
+            status = overall["status"]
+        if status == "LOAD_COMPLETED":
+            logger.info("neptune load %s complete", load_id)
+            return
+        if status in _NEPTUNE_LOAD_DONE_STATES:
+            raise RuntimeError(f"neptune load {load_id} ended with {status}: {overall}")
+        if time.monotonic() > deadline:
+            raise RuntimeError(
+                f"neptune load {load_id} did not complete within "
+                f"{NEPTUNE_LOAD_MAX_WAIT_SEC}s; last status: {status}"
+            )
+        logger.info("neptune load %s status=%s; polling", load_id, status)
+        await asyncio.sleep(NEPTUNE_LOAD_POLL_INTERVAL_SEC)
+
+
+async def seed_graph_neptune() -> None:
+    """Load pre-baked CSVs into Neptune via Bulk Loader if marker absent.
+
+    Reads NEPTUNE_HOST + NEPTUNE_LOADER_ROLE_ARN from env (CFN UserData
+    writes these from SSM Parameter Store). The S3 source prefix is
+    hardcoded — pre-baked artifacts at arcnode-public/seed/graph-neptune/.
+
+    Idempotent via :ArcnodeSeedMarker {slice:'graph'} node in Neptune
+    itself — same pattern as Neo4j. Re-running this fn on a seeded
+    cluster is a no-op (one openCypher check + return).
+    """
+    host = os.environ["NEPTUNE_HOST"]
+    loader_role_arn = os.environ["NEPTUNE_LOADER_ROLE_ARN"]
+
+    if await _neptune_has_marker(host):
+        logger.info("graph (neptune) slice already seeded; skipping")
+        return
+    logger.info(
+        "seeding graph (neptune) slice from %s via role %s",
+        NEPTUNE_S3_SOURCE,
+        loader_role_arn,
+    )
+    load_id = await _neptune_start_load(host, loader_role_arn)
+    await _neptune_wait_for_load(host, load_id)
+    await _neptune_write_marker(host)
+    logger.info("graph (neptune) slice seeded")
+
+
 async def seed_all(vector_url: str | None, graph_neo4j_url: str | None) -> None:
-    """Run available seeds at boot. Skips a slice when its env conn is unset."""
+    """Run available seeds at boot. Skips a slice when its env conn is unset.
+
+    Graph backend is chosen by env shape:
+      - GRAPH_URL  (Aura / self-hosted Neo4j) → seed_graph_neo4j
+      - NEPTUNE_HOST + NEPTUNE_LOADER_ROLE_ARN (defense) → seed_graph_neptune
+
+    Defense customers should have NEPTUNE_HOST but no GRAPH_URL.
+    Commercial customers have GRAPH_URL but no NEPTUNE_HOST. Airgapped
+    customers have GRAPH_URL pointing at their self-hosted Neo4j.
+    """
     if vector_url and os.environ.get("VECTOR_URL"):
         await seed_vector(vector_url)
     else:
         logger.info("vector seed skipped (no VECTOR_URL or seed URL)")
     if graph_neo4j_url and os.environ.get("GRAPH_URL"):
         await seed_graph_neo4j(graph_neo4j_url)
+    elif os.environ.get("NEPTUNE_HOST") and os.environ.get("NEPTUNE_LOADER_ROLE_ARN"):
+        await seed_graph_neptune()
     else:
-        logger.info("graph neo4j seed skipped (no GRAPH_URL or seed URL)")
+        logger.info(
+            "graph seed skipped (no GRAPH_URL+seed-url, "
+            "no NEPTUNE_HOST+NEPTUNE_LOADER_ROLE_ARN)"
+        )
