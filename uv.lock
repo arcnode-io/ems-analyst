@@ -2649,7 +2649,7 @@ wheels = [
 [[package]]
 name = "python-mcp-server"
 version = "1.0.0b0"
-source = { git = "https://gitlab.com/engineering-with-ai/python-mcp-server.git#ab4e21846216091a9f7bf727a36fff045e324f07" }
+source = { git = "https://gitlab.com/engineering-with-ai/python-mcp-server.git#4a9effbe7dfe2896393a0d3ba78a802ebcc6ab5b" }
 dependencies = [
     { name = "asyncpg" },
     { name = "graphiti-core", extra = ["neptune"] },
