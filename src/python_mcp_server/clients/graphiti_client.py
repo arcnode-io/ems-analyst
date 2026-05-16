@@ -50,12 +50,20 @@ class GraphitiClient:
             # Bedrock so search_knowledge / verify_fact don't reach for
             # OPENAI_API_KEY (which we scrubbed per ADR-024). See
             # graphiti_bedrock module + #64.
+            #
+            # Strip `https://` from AOSS_HOST if present — graphiti's
+            # opensearch client prepends the scheme itself; passing it
+            # twice makes opensearch-py wrap the URL as an IPv6 literal:
+            #   https://[https://abc.aoss.amazonaws.com]:443/...
+            # AossCollection.CollectionEndpoint from CFN includes the
+            # scheme by default.
+            clean_aoss = aoss_host.removeprefix("https://").removeprefix("http://")
             llm = BedrockLLMClient()
             return cls(
                 Graphiti(
                     graph_driver=NeptuneDriver(
                         host=f"neptune-db://{neptune_host}",
-                        aoss_host=aoss_host,
+                        aoss_host=clean_aoss,
                     ),
                     embedder=BedrockEmbedderClient(),
                     llm_client=llm,
