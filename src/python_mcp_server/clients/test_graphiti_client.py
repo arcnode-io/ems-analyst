@@ -50,7 +50,12 @@ class TestFromEnvFactory:
             )
 
     def test_neptune_env_constructs_neptune_backed_client(self) -> None:
-        """NEPTUNE_HOST + AOSS_HOST → Graphiti built with a NeptuneDriver."""
+        """NEPTUNE_HOST + AOSS_HOST → Graphiti with NeptuneDriver + Bedrock clients.
+
+        Per #64: cloud customers must NOT reach for OPENAI_API_KEY at runtime.
+        The Neptune branch wires graphiti's embedder/llm/cross_encoder to
+        Bedrock-backed implementations from graphiti_bedrock.
+        """
         # Arrange
         env = {
             "NEPTUNE_HOST": "my-cluster.amazonaws.com",
@@ -64,6 +69,9 @@ class TestFromEnvFactory:
             patch(
                 "python_mcp_server.clients.graphiti_client.NeptuneDriver"
             ) as mock_driver_class,
+            patch(
+                "python_mcp_server.clients.graphiti_bedrock.boto3.client"
+            ),  # graphiti_bedrock constructs boto3 clients on init; stub
         ):
             # Act
             client = GraphitiClient.from_env()
@@ -73,9 +81,19 @@ class TestFromEnvFactory:
                 host="neptune-db://my-cluster.amazonaws.com",
                 aoss_host="my-aoss.amazonaws.com",
             )
-            mock_graphiti_class.assert_called_once_with(
-                graph_driver=mock_driver_class.return_value
+            mock_graphiti_class.assert_called_once()
+            kwargs = mock_graphiti_class.call_args.kwargs
+            assert kwargs["graph_driver"] is mock_driver_class.return_value
+            # The Bedrock clients are wired so graphiti doesn't reach for OpenAI
+            from .graphiti_bedrock import (
+                BedrockCrossEncoderClient,
+                BedrockEmbedderClient,
+                BedrockLLMClient,
             )
+
+            assert isinstance(kwargs["embedder"], BedrockEmbedderClient)
+            assert isinstance(kwargs["llm_client"], BedrockLLMClient)
+            assert isinstance(kwargs["cross_encoder"], BedrockCrossEncoderClient)
             assert client.graphiti is mock_graphiti_class.return_value
 
     def test_missing_env_raises_runtime_error(self) -> None:

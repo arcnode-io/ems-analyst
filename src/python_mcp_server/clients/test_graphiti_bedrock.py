@@ -32,6 +32,7 @@ class TestBedrockEmbedderClient:
 
     @pytest.mark.asyncio
     async def test_create_returns_embedding_from_titan_body(self) -> None:
+        """create(str) -> the embedding field from Titan's response body."""
         # Arrange
         with patch(
             "python_mcp_server.clients.graphiti_bedrock.boto3.client"
@@ -53,6 +54,7 @@ class TestBedrockLLMClient:
 
     @pytest.mark.asyncio
     async def test_generate_response_returns_text_for_plain_call(self) -> None:
+        """Plain call (no response_model) returns content as {'content': str}."""
         # Arrange
         from graphiti_core.prompts.models import Message
 
@@ -79,6 +81,7 @@ class TestBedrockLLMClient:
     async def test_generate_response_extracts_tool_use_input_for_response_model(
         self,
     ) -> None:
+        """response_model -> Anthropic tool_use API -> input field is the parsed dict."""
         # Arrange
         from graphiti_core.prompts.models import Message
 
@@ -117,6 +120,7 @@ class TestBedrockCrossEncoderClient:
 
     @pytest.mark.asyncio
     async def test_rank_sorts_passages_by_llm_scores(self) -> None:
+        """LLM scores -> sorted desc with scores normalized to 0-1."""
         # Arrange
         llm = MagicMock(spec=BedrockLLMClient)
         llm._generate_response = AsyncMock(return_value={"scores": [10, 80, 50]})
@@ -130,6 +134,7 @@ class TestBedrockCrossEncoderClient:
 
     @pytest.mark.asyncio
     async def test_rank_empty_passages_returns_empty(self) -> None:
+        """Empty passages list short-circuits without an LLM call."""
         # Arrange
         reranker = BedrockCrossEncoderClient(llm=MagicMock(spec=BedrockLLMClient))
 
