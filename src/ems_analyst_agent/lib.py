@@ -3,6 +3,7 @@ import os
 
 from pydantic_ai import Agent as PydanticAgent, RunContext, Tool
 
+from .config import load_config
 from .memory import MemoryService
 from .tools.domain_mcp import create_mcp_server
 from .tools.weather_api import get_weather_forecast
@@ -33,8 +34,11 @@ class Agent:
 
         VECTOR_URL is sourced from process env (compose populates via
         env_file: secrets.env). Graph backend is read by the MCP server
-        from the same env, no threading needed.
+        from the same env, no threading needed. Chat model id comes from
+        cfg.yml (openai for local, bedrock for cloud per ADR-024).
         """
+        config = load_config()
+
         # Create memory service for semantic conversation storage
         self.memory_service = MemoryService(os.environ["VECTOR_URL"])
 
@@ -46,7 +50,7 @@ class Agent:
         # Create Pydantic AI agent with dependency injection.
         # Explicit type param tells ty that AgentDepsT == AgentDeps for run_sync(deps=...).
         self.agent: PydanticAgent[AgentDeps] = PydanticAgent(
-            "openai:gpt-4o-mini",
+            config.chat_model_id,
             deps_type=AgentDeps,
             # Tool() wrapper required for plain (non-RunContext) callables — pydantic-ai's
             # tools= type expects Tool[T] | (RunContext[T], ...) -> Any

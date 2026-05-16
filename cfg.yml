@@ -1,11 +1,15 @@
 local:
   log_level: DEBUG
+  chat_model_id: "openai:gpt-4o-mini"
   embedding_provider: "openai"
   embedding_model: "text-embedding-3-small"
   e2e: false
 
 beta:
   log_level: INFO
+  # Cloud chat: Sonnet 4.6 via CRIS (us.* prefix mandatory — direct
+  # anthropic.* IDs need provisioned throughput per ADR-024).
+  chat_model_id: "bedrock:us.anthropic.claude-sonnet-4-6"
   embedding_provider: "openai"
   embedding_model: "text-embedding-3-large"
-  e2e: true
+  e2e: false

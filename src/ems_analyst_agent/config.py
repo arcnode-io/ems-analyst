@@ -26,6 +26,10 @@ class Config(BaseModel):
     """
 
     log_level: LogLevel
+    # pydantic-ai model spec — `bedrock:us.anthropic.claude-sonnet-4-6`
+    # for cloud (Sonnet 4.6 via us.* CRIS — direct anthropic.* IDs need
+    # provisioned throughput), `openai:gpt-4o-mini` for local dev.
+    chat_model_id: str = "openai:gpt-4o-mini"
     embedding_provider: Literal["openai", "nomic"] = "openai"
     embedding_model: str = "text-embedding-3-small"
     e2e: bool = False
