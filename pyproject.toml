@@ -56,5 +56,5 @@ commit = "bash -c 'uv run poe checks && uv run poe test && uv run poe review && 
 omit = ["*/test_*.py", "tests/*", "*/main.py", "*/config.py"]
 
 [tool.uv.sources]
-python-mcp-server = { git = "https://gitlab.com/engineering-with-ai/software-python-mcp-server.git" }
+python-mcp-server = { git = "https://gitlab.com/engineering-with-ai/python-mcp-server.git" }
 
