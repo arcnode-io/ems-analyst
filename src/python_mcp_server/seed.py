@@ -233,9 +233,13 @@ async def _neptune_start_load(host: str, loader_role_arn: str) -> str:
             "format": "csv",
             "iamRoleArn": loader_role_arn,
             "region": region,
-            # CSVs are pre-validated; bail on the first bad row instead
-            # of partial loads we'd have to detect post-hoc.
-            "failOnError": "TRUE",
+            # Tolerate per-row errors — the loader logs them via the
+            # `errors` endpoint. The 1.5GB CSVs have a long-tail of
+            # malformed rows that won't be fixed at the source; bailing
+            # the whole load on a single parse error makes the seed
+            # impossible. (Phase 8 v4 hit exactly this: 1 error in
+            # 3.1M rows cancelled the entire load.)
+            "failOnError": "FALSE",
             "parallelism": "MEDIUM",
             "updateSingleCardinalityProperties": "FALSE",
             "queueRequest": "TRUE",
