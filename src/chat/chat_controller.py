@@ -21,5 +21,5 @@ class ChatController(Routable):
     )
     async def chat(self, body: ChatRequestDto) -> ChatResponseDto:
         """Send `prompt` to the analyst agent, return its reply."""
-        reply = self.chat_service.chat(body.prompt)
+        reply = await self.chat_service.chat(body.prompt)
         return ChatResponseDto(response=reply)

@@ -20,8 +20,8 @@ class ChatService:
     def __init__(self) -> None:
         self._agent: Agent | None = None
 
-    def chat(self, prompt: str) -> str:
+    async def chat(self, prompt: str) -> str:
         """Run the agent against `prompt`, return the text reply."""
         if self._agent is None:
             self._agent = Agent()
-        return self._agent.chat(prompt)
+        return await self._agent.chat_async(prompt)
