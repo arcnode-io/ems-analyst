@@ -82,28 +82,20 @@ class Agent:
             return ""
 
     def chat(self, prompt: str) -> str:
-        """Process a chat prompt and return a response.
+        """Process a chat prompt and return a response (sync entry).
 
-        Args:
-            prompt: The user's chat message
-
-        Returns:
-            The agent's response as a string
-
+        For callers that aren't already inside an event loop (CLI, sync
+        scripts). Inside an async context (FastAPI handler, etc.) use
+        chat_async — run_sync + asyncio.run both blow up under a
+        running loop.
         """
-        # Create dependencies for this chat session
+        return asyncio.run(self.chat_async(prompt))
+
+    async def chat_async(self, prompt: str) -> str:
+        """Async chat — safe to await from FastAPI handlers + async tests."""
         deps = AgentDeps(memory_service=self.memory_service)
-
-        # Run the agent synchronously
-        result = self.agent.run_sync(prompt, deps=deps)
-
-        # Store the user prompt in memory for future retrieval
-        # Reason: This enables semantic memory across conversations
-        async def store_memory() -> None:
-            embedding = await self.memory_service.generate_embedding(prompt)
-            await self.memory_service.store_memory(f"User stated: {prompt}", embedding)
-
-        asyncio.run(store_memory())
-
-        # Return the response output as a string
+        result = await self.agent.run(prompt, deps=deps)
+        # Store the user prompt for semantic memory across conversations.
+        embedding = await self.memory_service.generate_embedding(prompt)
+        await self.memory_service.store_memory(f"User stated: {prompt}", embedding)
         return str(result.output)
