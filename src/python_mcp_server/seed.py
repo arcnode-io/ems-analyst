@@ -42,6 +42,19 @@ def _fetch_gunzip(url: str) -> str:
         return gzip.decompress(resp.read()).decode()
 
 
+def _strip_psql_metacommands(sql: str) -> str:
+    """Remove psql meta-commands (lines starting with backslash).
+
+    pg_dump 16+ emits `\\restrict` / `\\unrestrict` for security around
+    plain-format dumps. Those are psql-specific — asyncpg's `execute`
+    runs raw SQL only and chokes on them. The data + schema statements
+    are unaffected by stripping these.
+    """
+    return "\n".join(
+        line for line in sql.splitlines() if not line.lstrip().startswith("\\")
+    )
+
+
 async def seed_vector(seed_url: str) -> None:
     """Restore vector dump into VECTOR_URL postgres if marker absent.
 
@@ -62,7 +75,7 @@ async def seed_vector(seed_url: str) -> None:
             logger.info("vector slice already seeded; skipping")
             return
         logger.info("seeding vector slice from %s", seed_url)
-        sql = _fetch_gunzip(seed_url)
+        sql = _strip_psql_metacommands(_fetch_gunzip(seed_url))
         async with conn.transaction():
             await conn.execute(sql)
             await conn.execute(
