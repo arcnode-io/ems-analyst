@@ -621,7 +621,7 @@ wheels = [
 [[package]]
 name = "ems-analyst-agent"
 version = "1.0.0b0"
-source = { git = "https://gitlab.com/arcnode-io/ems-analyst-agent.git#9f632c0a0819cd91eb03cb3bf5dd37125f5ed631" }
+source = { git = "https://gitlab.com/arcnode-io/ems-analyst-agent.git#f18fefa0c66a64d3ae21a99267fe74ac23afe263" }
 dependencies = [
     { name = "asyncpg" },
     { name = "httpx" },
@@ -2486,7 +2486,7 @@ wheels = [
 [[package]]
 name = "python-mcp-server"
 version = "1.0.0b0"
-source = { git = "https://gitlab.com/engineering-with-ai/python-mcp-server.git#a687cf038514b8ad47728093c532f6da96376a4f" }
+source = { git = "https://gitlab.com/engineering-with-ai/python-mcp-server.git#02615ebba67c05650b272ad81a75e294cfef0720" }
 dependencies = [
     { name = "asyncpg" },
     { name = "boto3" },
