@@ -61,7 +61,7 @@ def load_config() -> Config:
 
     ENV defaults to local; CUSTOMER_ENV defaults to defense.
     """
-    cfg_path = Path(__file__).parent.parent.parent / "cfg.yml"
+    cfg_path = Path(__file__).parent / "cfg.yml"
     with open(cfg_path) as file:
         config_map = _ConfigMap(**yaml.safe_load(file))
     env = os.environ.get("ENV", "local")
