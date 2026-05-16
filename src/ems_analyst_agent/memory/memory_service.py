@@ -24,6 +24,34 @@ class MemoryService:
         """
         self.postgres_url = postgres_url
         self.config = load_config()
+        self._table_ready = False
+
+    async def _ensure_table(self) -> None:
+        """Self-managed schema — agent owns conversation_memory.
+
+        Created lazily on first store/search. CREATE TABLE IF NOT EXISTS
+        keeps it idempotent across restarts.
+        """
+        if self._table_ready:
+            return
+        embedding_dim = (
+            OPENAI_EMBEDDING_DIM
+            if self.config.embedding_provider == "openai"
+            else NOMIC_EMBEDDING_DIM
+        )
+        conn = await asyncpg.connect(self.postgres_url)
+        try:
+            await conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
+            await conn.execute(
+                "CREATE TABLE IF NOT EXISTS conversation_memory ("
+                "id SERIAL PRIMARY KEY, "
+                "content TEXT NOT NULL, "
+                f"embedding vector({embedding_dim}) NOT NULL, "
+                "created_at TIMESTAMPTZ DEFAULT now())"
+            )
+        finally:
+            await conn.close()
+        self._table_ready = True
 
     async def store_memory(self, content: str, embedding: list[float]) -> None:
         """Store a memory with its embedding in the database.
@@ -37,6 +65,7 @@ class MemoryService:
             >>> await service.store_memory("User likes blue", [0.1, 0.2, ...])
 
         """
+        await self._ensure_table()
         conn = await asyncpg.connect(self.postgres_url)
         try:
             # Register vector type
@@ -73,6 +102,7 @@ class MemoryService:
             ['User likes blue', 'User prefers tea', ...]
 
         """
+        await self._ensure_table()
         conn = await asyncpg.connect(self.postgres_url)
         try:
             # Register vector type
