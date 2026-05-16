@@ -26,7 +26,7 @@ import os
 import urllib.request
 
 import asyncpg
-from neo4j import AsyncGraphDatabase
+from neo4j import AsyncGraphDatabase, AsyncManagedTransaction
 
 from .clients.graphiti_client import _split_neo4j_url
 
@@ -43,7 +43,11 @@ def _fetch_gunzip(url: str) -> str:
 
 
 async def seed_vector(seed_url: str) -> None:
-    """Restore vector dump into VECTOR_URL postgres if marker absent."""
+    """Restore vector dump into VECTOR_URL postgres if marker absent.
+
+    Restore + marker write run in one transaction — partial failure
+    rolls back so a retry starts from a clean state.
+    """
     conn = await asyncpg.connect(os.environ["VECTOR_URL"])
     try:
         await conn.execute(
@@ -59,19 +63,25 @@ async def seed_vector(seed_url: str) -> None:
             return
         logger.info("seeding vector slice from %s", seed_url)
         sql = _fetch_gunzip(seed_url)
-        await conn.execute(sql)
-        await conn.execute(
-            "INSERT INTO arcnode_seed_markers (slice) VALUES ($1) "
-            "ON CONFLICT DO NOTHING",
-            VECTOR_MARKER_SLICE,
-        )
+        async with conn.transaction():
+            await conn.execute(sql)
+            await conn.execute(
+                "INSERT INTO arcnode_seed_markers (slice) VALUES ($1) "
+                "ON CONFLICT DO NOTHING",
+                VECTOR_MARKER_SLICE,
+            )
         logger.info("vector slice seeded")
     finally:
         await conn.close()
 
 
 async def seed_graph_neo4j(seed_url: str) -> None:
-    """Restore cypher dump into GRAPH_URL Neo4j if marker absent."""
+    """Restore cypher dump into GRAPH_URL Neo4j if marker absent.
+
+    Restore + marker write run in one managed transaction via
+    session.execute_write — partial failure rolls back so a retry
+    starts from a clean state.
+    """
     uri, user, password = _split_neo4j_url(os.environ["GRAPH_URL"])
     if user is None or password is None:
         raise RuntimeError("GRAPH_URL must include user:password (Aura format)")
@@ -87,19 +97,22 @@ async def seed_graph_neo4j(seed_url: str) -> None:
                 return
         logger.info("seeding graph slice from %s", seed_url)
         cypher_script = _fetch_gunzip(seed_url)
-        async with driver.session() as session:
-            for raw in cypher_script.split(";\n"):
-                stmt = raw.strip()
-                if stmt:
-                    # Reason: stmt is from our own dump file — driver's
-                    # LiteralString constraint is for user-input safety,
-                    # doesn't apply to a controlled artifact.
-                    await session.run(stmt)  # ty: ignore[invalid-argument-type]
-            await session.run(
+        statements = [s.strip() for s in cypher_script.split(";\n") if s.strip()]
+
+        async def _restore(tx: AsyncManagedTransaction) -> None:
+            for stmt in statements:
+                # Reason: stmt is from our own dump file — driver's
+                # LiteralString constraint is for user-input safety,
+                # doesn't apply to a controlled artifact.
+                await tx.run(stmt)  # ty: ignore[invalid-argument-type]
+            await tx.run(
                 "MERGE (m:ArcnodeSeedMarker {slice: $slice}) "
                 "ON CREATE SET m.seeded_at = datetime()",
                 slice=GRAPH_MARKER_SLICE,
             )
+
+        async with driver.session() as session:
+            await session.execute_write(_restore)
         logger.info("graph slice seeded")
     finally:
         await driver.close()
