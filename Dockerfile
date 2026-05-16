@@ -15,4 +15,9 @@ COPY pyproject.toml uv.lock .
 RUN pip install uv && uv sync --frozen --no-dev --no-install-project
 COPY --from=builder /app/src ./src
 COPY cfg.yml .
-CMD ["uv", "run", "-m", "src.main"]
+# Seed-then-serve: mcp-server's seed CLI runs to completion (vector +
+# graph) BEFORE uvicorn starts. Markers are guaranteed written; chat
+# works immediately on first request. Background-seed inside the MCP
+# child doesn't work — pydantic-ai spawns + kills the child per request.
+# See python-mcp-server commit 1fbe75a + #63.
+CMD ["sh", "-c", "uv run -m python_mcp_server seed && uv run -m src.main"]

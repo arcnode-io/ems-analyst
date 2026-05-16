@@ -2486,7 +2486,7 @@ wheels = [
 [[package]]
 name = "python-mcp-server"
 version = "1.0.0b0"
-source = { git = "https://gitlab.com/engineering-with-ai/python-mcp-server.git#02615ebba67c05650b272ad81a75e294cfef0720" }
+source = { git = "https://gitlab.com/engineering-with-ai/python-mcp-server.git#1fbe75a2c0b96d865e227d3d3a6d68d43ebb205d" }
 dependencies = [
     { name = "asyncpg" },
     { name = "boto3" },
