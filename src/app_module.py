@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from src.app_controller import AppController
 from src.call_api.call_api_module import CallApiModule
+from src.chat.chat_module import ChatModule
 from src.config import load_config, LogLevel
 from pydantic_settings import BaseSettings
 from ipaddress import IPv4Address
@@ -31,11 +32,13 @@ class AppModule:
         )
 
     def import_module(self, app: FastAPI) -> None:
-        """Register basic routes (app_controller, call_api)."""
+        """Register basic routes (app_controller, call_api, chat)."""
         app_controller = AppController()
         call_api = CallApiModule()
+        chat = ChatModule()
         app.include_router(app_controller.router)
         app.include_router(call_api.router)
+        app.include_router(chat.router)
 
     def create_app(self) -> FastAPI:
         """Create and configure the basic FastAPI application."""

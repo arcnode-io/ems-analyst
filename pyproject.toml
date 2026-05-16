@@ -4,6 +4,7 @@ version = "1.0.0-beta"
 requires-python = "==3.13.2"
 dependencies = [
     "classy-fastapi>=0.6.1",
+    "ems-analyst-agent",
     "fastapi>=0.116.1",
     "httpx>=0.28.1",
     "pydantic>=2.11.7",
@@ -11,6 +12,9 @@ dependencies = [
     "pyyaml>=6.0.2",
     "uvicorn>=0.34.0",
 ]
+
+[tool.uv.sources]
+ems-analyst-agent = { git = "https://gitlab.com/arcnode-io/ems-analyst-agent.git" }
 
 [dependency-groups]
 dev = [
