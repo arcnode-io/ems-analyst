@@ -5,7 +5,11 @@ from typing import Final
 
 from pydantic_ai.mcp import MCPServerStdio
 
-MCP_SERVER_TIMEOUT: Final[int] = 30
+# mcp-server runs seed_all (vector pg restore + Neptune bulk-load) at
+# boot BEFORE responding to the MCP initialize handshake. Neptune bulk
+# loader takes 3-5 min for a ~400MB CSV. Real fix: background the seed
+# so MCP boots fast (see follow-up task in MEMORY.md).
+MCP_SERVER_TIMEOUT: Final[int] = 600
 
 
 def create_mcp_server() -> MCPServerStdio:
