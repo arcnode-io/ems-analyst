@@ -3,11 +3,13 @@ name = "ems-analyst-server"
 version = "1.0.0-beta"
 requires-python = "==3.13.2"
 dependencies = [
+    "asyncpg>=0.31.0",
     "classy-fastapi>=0.6.1",
     "ems-analyst-agent",
     "fastapi>=0.116.1",
     "httpx>=0.28.1",
     "pydantic>=2.11.7",
+    "pydantic-ai>=1.97.0",
     "pydantic-settings>=2.6.0",
     "pyyaml>=6.0.2",
     "uvicorn>=0.34.0",
@@ -18,6 +20,7 @@ ems-analyst-agent = { git = "https://gitlab.com/arcnode-io/ems-analyst-agent.git
 
 [dependency-groups]
 dev = [
+    "asyncpg-stubs>=0.31.2",
     "bandit>=1.8.0",
     "black[d]>=26.3.1",
     "deptry>=0.23.0",
@@ -29,6 +32,7 @@ dev = [
     "pytest-asyncio>=0.24.0",
     "pytest-cov>=6.0.0",
     "ruff>=0.8.4",
+    "testcontainers[postgres]>=4.14.2",
     "ty>=0.0.18",
     "types-pyyaml>=6.0",
 ]
@@ -48,6 +52,9 @@ integration = "pytest -vv tests/*"
 cover = "pytest -vv --cov"
 review = "claude 'run code-reviewer agent against diff for quality and elegance'"
 commit = "bash -c 'uv run poe checks && uv run poe cover && uv run poe review && git add -A && git cz && git push'"
+
+[tool.deptry.per_rule_ignores]
+DEP004 = ["pytest", "testcontainers", "pytest_asyncio"]
 
 [tool.coverage.run]
 omit = ["*/test_*.py", "tests/*"]

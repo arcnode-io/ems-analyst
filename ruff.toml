@@ -55,3 +55,8 @@ ignore = [
 [lint.pylint]
 max-args = 5
 max-statements = 30
+
+[lint.per-file-ignores]
+# Tests: classes + methods self-document via AAA pattern.
+"*_test.py" = ["D101", "D102", "D103"]
+"test_*.py" = ["D101", "D102", "D103", "S106"]
