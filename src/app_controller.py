@@ -16,3 +16,8 @@ class AppController(Routable):
             A string response  'ok'
         """
         return Response("ok")
+
+    @get("/health")
+    def health(self) -> Response:
+        """Liveness probe — proxies + k8s commonly hit /health, not /."""
+        return Response("ok")

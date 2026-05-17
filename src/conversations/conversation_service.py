@@ -1,12 +1,16 @@
 """Orchestrates conversation store + ems_analyst_agent.Agent for one turn."""
 
+import logging
 import os
+from datetime import UTC, datetime
 
 from ems_analyst_agent.lib import Agent
 from ems_analyst_agent.schemas import AnalystMessage
 
 from .conversation_store import ConversationStore, SiteIdMismatchError
 from .dto import AnalystChatRequest
+
+log = logging.getLogger(__name__)
 
 _VECTOR_URL_ENV: str = "VECTOR_URL"
 _SITE_ID_ENV: str = "SITE_ID"
@@ -60,8 +64,48 @@ class ConversationService:
             )
 
         history = await store.load_history(req.conversation_id)
-        turn = await self._agent_instance().chat_turn(
-            req.message, message_history=history
-        )
+        try:
+            turn = await self._agent_instance().chat_turn(
+                req.message, message_history=history
+            )
+        except Exception:
+            # Reason: catching broad — Ollama timeouts, MCP child crash,
+            # historian down, Bedrock 503 all surface here. HMI renders
+            # the error variant of AnalystArtifact via its existing
+            # ChartRenderer error-card path; better than HTTP 500.
+            log.exception("agent turn failed")
+            return _error_message()
         await store.append_messages(req.conversation_id, turn.new_messages)
         return turn.message
+
+
+def _error_message() -> AnalystMessage:
+    """Apologetic AnalystMessage with a ToolError artifact instead of 500."""
+    return AnalystMessage.model_validate(
+        {
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "text",
+                    "text": (
+                        "I hit a snag handling that — the model or one of its "
+                        "tools failed. Try again in a moment, or rephrase. "
+                        "If it keeps happening let the team know."
+                    ),
+                },
+                {
+                    "type": "artifact",
+                    "artifact": {
+                        "kind": "error",
+                        "spec": {
+                            "code": "unknown",
+                            "message": "agent turn failed; see server logs",
+                            "dataAsOf": datetime.now(UTC).strftime(
+                                "%Y-%m-%dT%H:%M:%SZ"
+                            ),
+                        },
+                    },
+                },
+            ],
+        }
+    )

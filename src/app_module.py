@@ -1,10 +1,18 @@
+import logging
+import os
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from ipaddress import IPv4Address
+
+from ems_analyst_agent.demo_seed import seed_measurements
 from fastapi import FastAPI
+from pydantic_settings import BaseSettings
 from src.app_controller import AppController
 from src.call_api.call_api_module import CallApiModule
+from src.config import LogLevel, load_config
 from src.conversations.conversation_module import ConversationModule
-from src.config import load_config, LogLevel
-from pydantic_settings import BaseSettings
-from ipaddress import IPv4Address
+
+log = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):  # type: ignore[explicit-any]  # upstream: pydantic-settings PRs #557/#559 reverted Any fix
@@ -42,6 +50,23 @@ class AppModule:
 
     def create_app(self) -> FastAPI:
         """Create and configure the basic FastAPI application."""
-        app = FastAPI()
+        app = FastAPI(lifespan=_lifespan)
         self.import_module(app)
         return app
+
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    """Boot/teardown hook — ENV=demo triggers measurements seed.
+
+    Seed is idempotent: skips when rows already present (e.g. restart
+    against a persistent volume).
+    """
+    if os.environ.get("ENV") == "demo":
+        timeseries_url = os.environ.get("TIMESERIES_URL")
+        if timeseries_url:
+            rows = await seed_measurements(timeseries_url)
+            log.info("ENV=demo: measurements table now has %d rows", rows)
+        else:
+            log.warning("ENV=demo but TIMESERIES_URL unset; skipping seed")
+    yield
