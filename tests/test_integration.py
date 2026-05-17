@@ -197,6 +197,7 @@ class TestIntegration:
         finally:
             if not cfg.e2e:
                 pook.off()
+                pook.reset()
 
     def test_api(self, test_containers: tuple[str, str]) -> None:
         """Agent.chat runs the weather-tool path without crashing."""
@@ -229,6 +230,93 @@ class TestIntegration:
         finally:
             if not cfg.e2e:
                 pook.off()
+                pook.reset()
+
+    def test_markets(self, test_containers: tuple[str, str]) -> None:
+        """Agent.chat runs the gridstatus market-data path without crashing."""
+        from src.ems_analyst_agent.tools.markets import GRIDSTATUS_BASE_URL
+
+        cfg = load_config()
+        neo4j_url, pg_url = test_containers
+        os.environ["VECTOR_URL"] = pg_url
+        os.environ["GRAPH_URL"] = neo4j_url
+        os.environ["GRIDSTATUS_API_KEY"] = "test-key"
+
+        if not cfg.e2e:
+            pook.on()
+            pook.enable_network()
+            _mock_ollama_responses(
+                "ERCOT fuel mix shows 12 GW wind and 8 GW solar at this hour."
+            )
+            pook.get(
+                f"{GRIDSTATUS_BASE_URL}/datasets/ercot_fuel_mix/query"
+            ).persist().reply(200).json(
+                {
+                    "data": [
+                        {
+                            "interval_start_utc": "2026-05-16T00:00:00Z",
+                            "wind": 12345.6,
+                            "solar": 7890.1,
+                            "natural_gas": 30000.0,
+                        }
+                    ],
+                    "meta": {"hasNextPage": False},
+                }
+            )
+
+        try:
+            agent = Agent()
+            result = agent.chat("What's the current ERCOT fuel mix?")
+            assert (
+                "ercot" in result.lower()
+                or "wind" in result.lower()
+                or "fuel" in result.lower()
+            )
+        finally:
+            if not cfg.e2e:
+                pook.off()
+                pook.reset()
+
+    def test_geopolitical(self, test_containers: tuple[str, str]) -> None:
+        """Agent.chat runs the RSS-aggregator path without crashing."""
+        from src.ems_analyst_agent.tools.geopolitical import ENERGY_FEED_URLS
+
+        cfg = load_config()
+        neo4j_url, pg_url = test_containers
+        os.environ["VECTOR_URL"] = pg_url
+        os.environ["GRAPH_URL"] = neo4j_url
+
+        sample_rss = (
+            '<?xml version="1.0"?><rss version="2.0"><channel>'
+            "<title>Test Feed</title>"
+            "<item><title>OPEC+ cut sends Brent to $95</title>"
+            "<pubDate>Sat, 16 May 2026 12:00:00 GMT</pubDate></item>"
+            "</channel></rss>"
+        )
+
+        if not cfg.e2e:
+            pook.on()
+            pook.enable_network()
+            _mock_ollama_responses(
+                "Top energy headline: OPEC+ cut sends Brent crude to $95."
+            )
+            for url in ENERGY_FEED_URLS:
+                pook.get(url).persist().reply(200).type(
+                    "application/rss+xml"
+                ).body(sample_rss)
+
+        try:
+            agent = Agent()
+            result = agent.chat("Give me the top energy news headlines.")
+            assert (
+                "opec" in result.lower()
+                or "brent" in result.lower()
+                or "energy" in result.lower()
+            )
+        finally:
+            if not cfg.e2e:
+                pook.off()
+                pook.reset()
 
     def test_memory(self, test_containers: tuple[str, str]) -> None:
         """Agent.chat persists + recalls memories via pgvector."""
@@ -254,3 +342,4 @@ class TestIntegration:
         finally:
             if not cfg.e2e:
                 pook.off()
+                pook.reset()
