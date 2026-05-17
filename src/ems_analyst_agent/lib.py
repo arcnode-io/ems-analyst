@@ -7,6 +7,7 @@ chat AND memory embeddings; one llm_provider per customer block.
 
 import asyncio
 import os
+from dataclasses import dataclass
 
 from pydantic_ai import Agent as PydanticAgent, RunContext, Tool
 from pydantic_ai.messages import ModelMessage
@@ -37,6 +38,20 @@ _FORBIDDEN_VERB_PREFIXES: tuple[str, ...] = (
     "create_",
     "update_",
 )
+
+
+@dataclass
+class ChatTurnResult:
+    """One agent turn: HMI-facing AnalystMessage + raw pydantic-ai messages.
+
+    `message` is what the HMI / `chat_message` consumer renders.
+    `new_messages` is the lossless pydantic-ai trace (incl. tool calls +
+    returns) that an upstream conversation store should persist so future
+    turns can pre-load context.
+    """
+
+    message: AnalystMessage
+    new_messages: list[ModelMessage]
 
 
 class AgentDeps:
@@ -145,9 +160,23 @@ class Agent:
     ) -> AnalystMessage:
         """Run the agent and return a full AnalystMessage (text + artifacts).
 
-        HMI's `POST /analyst/chat` consumes this verbatim. When the upstream
-        server holds a multi-turn conversation, it pre-loads prior turns via
-        `message_history` so the LLM sees the full thread (tool calls + all).
+        Thin wrapper around `chat_turn` for callers that don't need to
+        persist the pydantic-ai message trace.
+        """
+        return (await self.chat_turn(prompt, message_history=message_history)).message
+
+    async def chat_turn(
+        self,
+        prompt: str,
+        *,
+        message_history: list[ModelMessage] | None = None,
+    ) -> ChatTurnResult:
+        """One agent turn — returns HMI message + raw pydantic-ai trace.
+
+        The upstream server holds the multi-turn conversation. It pre-loads
+        prior pydantic-ai ModelMessages via `message_history` so the LLM
+        sees tool calls + returns from earlier turns; it persists
+        `new_messages` after this call so the next turn can replay.
         """
         deps = AgentDeps(memory_service=self.memory_service)
         result = await self.agent.run(
@@ -163,7 +192,12 @@ class Agent:
                 for art in deps.artifacts
             ),
         ]
-        return AnalystMessage.model_validate({"role": "assistant", "content": content})
+        return ChatTurnResult(
+            message=AnalystMessage.model_validate(
+                {"role": "assistant", "content": content}
+            ),
+            new_messages=list(result.new_messages()),
+        )
 
 
 def _assert_read_only(tools: list[Tool[object]]) -> None:

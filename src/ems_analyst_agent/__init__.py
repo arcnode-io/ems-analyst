@@ -8,7 +8,7 @@ Public surface:
 """
 
 from .config import load_config, setup_logger
-from .lib import Agent, AgentDeps
+from .lib import Agent, AgentDeps, ChatTurnResult
 from .schemas import (
     AnalystArtifact,
     AnalystMessage,
@@ -25,6 +25,7 @@ __all__ = [
     "AnalystArtifact",
     "AnalystMessage",
     "BarSpec",
+    "ChatTurnResult",
     "LineSpec",
     "PieSpec",
     "TableSpec",
