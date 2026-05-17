@@ -15,3 +15,17 @@ def test_healthcheck_endpoint() -> None:
 
     # Assert
     assert response.text == expected_text
+
+
+def test_health_endpoint() -> None:
+    """GET /health for proxy / k8s liveness probes."""
+    # Arrange
+    app = AppModule().create_app()
+    client = TestClient(app)
+
+    # Act
+    response = client.get("/health")
+
+    # Assert
+    assert response.status_code == 200
+    assert response.text == "ok"
