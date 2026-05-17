@@ -27,9 +27,7 @@ def empty_postgres_url() -> Generator[str]:
 
 class TestSeedMeasurements:
     @pytest.mark.asyncio
-    async def test_first_seed_loads_bundled_csv(
-        self, empty_postgres_url: str
-    ) -> None:
+    async def test_first_seed_loads_bundled_csv(self, empty_postgres_url: str) -> None:
         # Arrange + Act
         rows = await seed_measurements(empty_postgres_url)
 
@@ -37,9 +35,7 @@ class TestSeedMeasurements:
         assert rows >= 80
 
     @pytest.mark.asyncio
-    async def test_second_seed_is_noop(
-        self, empty_postgres_url: str
-    ) -> None:
+    async def test_second_seed_is_noop(self, empty_postgres_url: str) -> None:
         # Arrange — first call already populated the table from the
         # previous test (module-scoped fixture is shared).
         # Act

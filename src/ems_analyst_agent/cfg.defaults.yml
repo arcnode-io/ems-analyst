@@ -8,6 +8,13 @@ local:
     ollama_base_url: http://173.211.12.43:11434/v1
     ollama_chat_model: qwen3.6:35b
     ollama_embedding_model: qwen3-embedding:4b
+  # market defaults for dev / tests. Per-deploy override comes from
+  # /app/cfg.local.yml which platform-api UserData writes from the
+  # ConfiguratorPayload at boot time. See config.py loader for the
+  # merge order.
+  market:
+    wholesale_market: ercot
+    settlement_point: HB_NORTH
 
 demo:
   # Self-hosted demo deployment — same provider as local, but the
@@ -20,6 +27,9 @@ demo:
     ollama_base_url: http://173.211.12.43:11434/v1
     ollama_chat_model: qwen3.6:35b
     ollama_embedding_model: qwen3-embedding:4b
+  market:
+    wholesale_market: ercot
+    settlement_point: HB_NORTH
 
 beta:
   log_level: INFO
@@ -30,3 +40,9 @@ beta:
     # provisioned throughput.
     bedrock_chat_model_id: us.anthropic.claude-sonnet-4-6
     bedrock_embedding_model_id: amazon.titan-embed-text-v2:0
+  # beta deploys ALWAYS get a /app/cfg.local.yml overlay from UserData
+  # with the customer's actual market. These are fallback values only —
+  # the overlay should always be present in prod.
+  market:
+    wholesale_market: ercot
+    settlement_point: HB_NORTH

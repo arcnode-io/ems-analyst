@@ -1,19 +1,14 @@
-"""Per-stage configuration loader.
-
-Mirrors python-mcp-server's discriminated-union shape so the embedder
-provider drives chat + memory together (one llm_provider per stage).
-
-cfg.yml shape: cfg[ENV].settings -> {Bedrock|Ollama}Settings.
-"""
+"""Per-stage configuration loader. ENV picks stage, CFG_CUSTOMER_PATH merges over it."""
 
 import enum
 import logging
 import os
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Annotated, Any, Literal
 
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from pydantic_ai.models import Model
 from pydantic_ai.models.bedrock import BedrockConverseModel
 from pydantic_ai.models.openai import OpenAIChatModel
@@ -26,7 +21,7 @@ from python_mcp_server.config import (
 
 
 class LogLevel(enum.StrEnum):
-    """Stdlib logging level names; StrEnum so cfg.yml strings parse directly."""
+    """Stdlib logging level names; StrEnum so YAML strings parse directly."""
 
     ERROR = "ERROR"
     WARN = "WARN"
@@ -34,12 +29,31 @@ class LogLevel(enum.StrEnum):
     DEBUG = "DEBUG"
 
 
+class ErcotSettlementPoint(enum.StrEnum):
+    HB_NORTH = "HB_NORTH"
+    HB_SOUTH = "HB_SOUTH"
+    HB_HOUSTON = "HB_HOUSTON"
+    HB_WEST = "HB_WEST"
+    HB_BUSAVG = "HB_BUSAVG"
+    HB_PAN = "HB_PAN"
+
+
+class ErcotMarket(BaseModel):
+    wholesale_market: Literal["ercot"]
+    settlement_point: ErcotSettlementPoint
+
+
+# Add a new ISO arm + hub enum here when the next market comes online.
+MarketConfig = Annotated[ErcotMarket, Field(discriminator="wholesale_market")]
+
+
 class StageConfig(BaseModel):
-    """One stage block in cfg.yml."""
+    """One stage block in cfg.defaults.yml."""
 
     log_level: LogLevel
     e2e: bool = False
     settings: ProviderSettings
+    market: MarketConfig
 
 
 class _ConfigMap(BaseModel):
@@ -54,20 +68,48 @@ class Config(BaseModel):
     log_level: LogLevel
     e2e: bool = False
     settings: ProviderSettings
+    market: MarketConfig
 
 
 def load_config() -> Config:
-    """Resolve cfg[ENV] -> Config. ENV defaults to local."""
-    cfg_path = Path(__file__).parent / "cfg.yml"
-    with open(cfg_path) as file:
-        config_map = _ConfigMap(**yaml.safe_load(file))
+    """Resolve cfg[ENV] -> Config. ENV picks stage; CFG_CUSTOMER_PATH merges over it."""
+    defaults_path = Path(__file__).parent / "cfg.defaults.yml"
+    with open(defaults_path) as file:
+        raw: dict[str, Any] = yaml.safe_load(file)
     env = os.environ.get("ENV", "local")
+    customer_path_env = os.environ.get("CFG_CUSTOMER_PATH")
+    if customer_path_env:
+        customer_path = Path(customer_path_env)
+        if customer_path.exists():
+            with open(customer_path) as file:
+                customer: dict[str, Any] = yaml.safe_load(file) or {}
+            stage_raw = raw.get(env, raw["local"])
+            if not isinstance(stage_raw, dict):
+                raise TypeError(f"cfg.defaults.yml stage {env!r} is not a mapping")
+            raw[env] = _deep_merge(stage_raw, customer)
+    config_map = _ConfigMap(**raw)
     stage = {
         "local": config_map.local,
         "demo": config_map.demo,
         "beta": config_map.beta,
     }.get(env, config_map.local)
-    return Config(log_level=stage.log_level, e2e=stage.e2e, settings=stage.settings)
+    return Config(
+        log_level=stage.log_level,
+        e2e=stage.e2e,
+        settings=stage.settings,
+        market=stage.market,
+    )
+
+
+def _deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
+    """Overlay wins per key. Nested dicts merge recursively; scalars + lists overwrite."""
+    out = dict(base)
+    for key, val in overlay.items():
+        if isinstance(val, dict) and isinstance(out.get(key), dict):
+            out[key] = _deep_merge(out[key], val)
+        else:
+            out[key] = val
+    return out
 
 
 def chat_model(settings: ProviderSettings) -> Model:

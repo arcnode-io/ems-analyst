@@ -85,10 +85,11 @@ class Agent:
         """Initialize the agent.
 
         VECTOR_URL is sourced from process env (compose env_file
-        secrets.env). Chat model + embedder both come from cfg.yml's
-        per-customer block.
+        secrets.env). Chat model + embedder come from cfg.defaults.yml
+        with optional per-deploy overrides via cfg.customer.yml.
         """
         config = load_config()
+        self.market = config.market
         embedder = make_embedder(config.settings)
         self.memory_service = MemoryService(
             postgres_url=os.environ["VECTOR_URL"],
@@ -128,6 +129,18 @@ class Agent:
                 system_prompt=load_system_prompt(),
             )
         )
+
+        # Scope LLM LMP / fuel-mix queries to the customer's hub.
+        market = self.market
+
+        @self.agent.system_prompt
+        def inject_market_context() -> str:
+            return (
+                f"Wholesale market context: this deployment participates in "
+                f"{market.wholesale_market.upper()} with settlement point "
+                f"{market.settlement_point.value}. Scope LMP and market-data "
+                f"queries to this hub unless the user explicitly asks otherwise."
+            )
 
         # Register dynamic system prompt for memory injection
         @self.agent.system_prompt
