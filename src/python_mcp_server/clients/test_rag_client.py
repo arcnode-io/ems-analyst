@@ -13,12 +13,11 @@ async def test_connect_unquotes_password_and_uses_kwargs() -> None:
     """_connect() parses an encoded URL and passes kwargs (no raw URL).
 
     Reason: asyncpg's URL parser splits on the FIRST `@` so a password
-    containing `@` (common in shared dev creds) breaks DNS resolution.
-    Going through kwargs avoids that parser; unquote() returns the real
-    password to asyncpg.
+    containing `@` breaks DNS resolution. Going through kwargs avoids
+    that parser; unquote() returns the original password to asyncpg.
     """
-    # Arrange — 'REDACTED' encoded ends in %40%21
-    url = "postgres://postgres:REDACTED@host.example:5432/postgres"
+    # Arrange — fake password 't!st@x' encoded as 't%21st%40x'
+    url = "postgres://alice:t%21st%40x@host.example:5432/db1"
     with patch(
         "src.python_mcp_server.clients.rag_client.asyncpg.connect"
     ) as mock_connect:
@@ -31,9 +30,9 @@ async def test_connect_unquotes_password_and_uses_kwargs() -> None:
         mock_connect.assert_called_once_with(
             host="host.example",
             port=5432,
-            user="postgres",
-            password="REDACTED",  # noqa: S106  # nosec B106
-            database="postgres",
+            user="alice",
+            password="t!st@x",  # noqa: S106  # nosec B106
+            database="db1",
         )
 
 
