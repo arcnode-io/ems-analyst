@@ -87,8 +87,10 @@ def test_containers() -> Generator[tuple[str, str]]:
             image="pgvector/pgvector:pg16",
         ) as postgres,
     ):
-        # Wait for Neo4j
-        max_retries = 30
+        # Wait for Neo4j. 30s wasn't enough when docker is also booting a
+        # second postgres container in parallel (e.g. test_timeseries fixture
+        # runs alongside) — bumped to 90s to absorb the startup contention.
+        max_retries = 90
         for attempt in range(max_retries):
             try:
                 # neo4j.url carries embedded creds for the GRAPH_URL contract;
