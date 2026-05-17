@@ -15,6 +15,7 @@ from .telemetry import (
     build_device_list,
     build_energy_breakdown_stub,
     build_markets_stub,
+    build_site_description,
     build_timeseries,
 )
 
@@ -44,6 +45,21 @@ async def query_timeseries(
     if art.kind == "error":
         return f"No {measurement} data for {device_id} over {window}."
     return f"Queried {measurement} on {device_id}, window={window}, agg={aggregation}."
+
+
+async def describe_site(ctx: RunContext[_TelemetryDeps]) -> str:
+    """Discover what's actually in the historian — call BEFORE query_timeseries.
+
+    Returns the (device, measurement) registry as a TableSpec so the LLM
+    knows which device_ids and measurement names to pass to other tools.
+    Avoids the failure mode where the model guesses 'soc' but the data
+    publishes as 'state_of_charge'.
+    """
+    client = ctx.deps.timeseries
+    assert isinstance(client, TimeseriesClient)
+    art = await build_site_description(client, ctx.deps.site_id)
+    ctx.deps.artifacts.append(art)
+    return f"Returned device+measurement registry for site '{ctx.deps.site_id}'."
 
 
 async def list_devices_where(

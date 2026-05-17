@@ -148,7 +148,7 @@ async def main() -> None:
     pook.off()  # in case something else turned it on this process
     out_dir = Path(os.environ.get("EVAL_OUT_DIR", "/tmp"))  # noqa: S108  # nosec B108
     out_dir.mkdir(parents=True, exist_ok=True)
-    with seeded_timeseries_client() as timeseries:
+    async with seeded_timeseries_client() as timeseries:
         reports = [
             await run_with_mcp("ollama", timeseries),
             await run_with_mcp("bedrock", timeseries),

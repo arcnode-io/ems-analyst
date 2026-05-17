@@ -101,6 +101,33 @@ async def build_timeseries(
     )
 
 
+async def build_site_description(
+    client: TimeseriesClient,
+    site_id: str,
+) -> AnalystArtifact:
+    """Distinct (device, measurement) pairs at the site — registry as a table."""
+    rows = await client.describe_site(site_id=site_id)
+    if not rows:
+        return _error_artifact(
+            "not_found", f"No measurements published for site '{site_id}' yet."
+        )
+    spec = TableSpec.model_validate(
+        {
+            "title": f"Available data at site '{site_id}'",
+            "columns": [
+                {"key": "device", "label": "Device"},
+                {"key": "measurement", "label": "Measurement"},
+                {"key": "samples", "label": "Samples", "align": "right"},
+            ],
+            "rows": rows,
+            "dataAsOf": _now(),
+        }
+    )
+    return AnalystArtifact.model_validate(
+        {"kind": "table", "spec": spec.model_dump(by_alias=True)}
+    )
+
+
 async def build_device_list(
     client: TimeseriesClient,
     site_id: str,

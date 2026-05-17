@@ -168,7 +168,7 @@ async def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(UTC).strftime("%Y-%m-%d")
 
-    with seeded_timeseries_client() as timeseries:
+    async with seeded_timeseries_client() as timeseries:
         reports = [
             await run_provider("ollama", timeseries),
             await run_provider("bedrock", timeseries),

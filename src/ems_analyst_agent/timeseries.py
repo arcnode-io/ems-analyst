@@ -1,8 +1,8 @@
-"""TimeseriesClient — portable SQL over public.measurements.
+"""TimeseriesClient — portable SQL over measurements.
 
 Schema (identical across Tiger / Aurora+pg_partman / self-hosted Timescale):
 
-  CREATE TABLE public.measurements (
+  CREATE TABLE measurements (
       ts          timestamptz,
       site_id     text,
       device_id   text,
@@ -73,7 +73,7 @@ class TimeseriesClient:
             agg AS (
                 SELECT date_trunc('hour', ts) AS bucket,
                        {agg_sql} AS y
-                FROM public.measurements
+                FROM measurements
                 WHERE site_id = $3
                   AND device_id = $4
                   AND measurement = $5
@@ -106,13 +106,13 @@ class TimeseriesClient:
             WITH latest_status AS (
                 SELECT DISTINCT ON (device_id)
                        device_id, (value::text) AS status
-                FROM public.measurements
+                FROM measurements
                 WHERE site_id = $1 AND measurement = 'status'
                 ORDER BY device_id, ts DESC
             )
             SELECT DISTINCT m.device_id,
                    ls.status
-            FROM public.measurements m
+            FROM measurements m
             LEFT JOIN latest_status ls ON ls.device_id = m.device_id
             WHERE m.site_id = $1
             ORDER BY m.device_id
@@ -130,6 +130,33 @@ class TimeseriesClient:
             return [r for r in result if r["status"] in status]
         return result
 
+    async def describe_site(self, site_id: str) -> list[dict[str, str | int]]:
+        """Distinct (device_id, measurement) pairs + sample count at the site.
+
+        Lets the LLM discover what's actually in the historian before guessing
+        measurement names. Returns rows like:
+            {"device": "BESS-01", "measurement": "state_of_charge", "samples": 48}
+        """
+        conn = await asyncpg.connect(self.postgres_url)
+        try:
+            rows = await conn.fetch(
+                "SELECT device_id, measurement, count(*) AS samples "
+                "FROM measurements WHERE site_id = $1 "
+                "GROUP BY device_id, measurement "
+                "ORDER BY device_id, measurement",
+                site_id,
+            )
+        finally:
+            await conn.close()
+        return [
+            {
+                "device": str(r["device_id"]),
+                "measurement": str(r["measurement"]),
+                "samples": int(r["samples"]),
+            }
+            for r in rows
+        ]
+
     async def query_sum_over_window(
         self, site_id: str, measurement: str, window: timedelta
     ) -> float | None:
@@ -140,7 +167,7 @@ class TimeseriesClient:
         """
         sql = """
             SELECT SUM((value::text)::float) AS total
-            FROM public.measurements
+            FROM measurements
             WHERE site_id = $1
               AND measurement = $2
               AND ts >= now() - $3::interval

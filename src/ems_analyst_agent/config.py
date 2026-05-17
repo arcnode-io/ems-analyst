@@ -44,6 +44,7 @@ class StageConfig(BaseModel):
 
 class _ConfigMap(BaseModel):
     local: StageConfig
+    demo: StageConfig
     beta: StageConfig
 
 
@@ -61,7 +62,11 @@ def load_config() -> Config:
     with open(cfg_path) as file:
         config_map = _ConfigMap(**yaml.safe_load(file))
     env = os.environ.get("ENV", "local")
-    stage = config_map.local if env != "beta" else config_map.beta
+    stage = {
+        "local": config_map.local,
+        "demo": config_map.demo,
+        "beta": config_map.beta,
+    }.get(env, config_map.local)
     return Config(log_level=stage.log_level, e2e=stage.e2e, settings=stage.settings)
 
 

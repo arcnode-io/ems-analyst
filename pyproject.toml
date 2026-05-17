@@ -65,7 +65,12 @@ omit = ["*/test_*.py", "tests/*", "*/main.py", "*/config.py"]
 # prompts.load_system_prompt can find them when this package is consumed
 # as a git dep from another project's venv (the repo root isn't
 # accessible there). Same pattern as python-mcp-server.
-ems_analyst_agent = ["cfg.yml", "prompts/*.md", "prompts/**/*.md"]
+ems_analyst_agent = [
+    "cfg.yml",
+    "prompts/*.md",
+    "prompts/**/*.md",
+    "demo_data/*.csv",
+]
 
 [tool.uv.sources]
 python-mcp-server = { git = "https://gitlab.com/engineering-with-ai/python-mcp-server.git" }

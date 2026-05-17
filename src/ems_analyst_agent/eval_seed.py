@@ -8,12 +8,12 @@ returns a TimeseriesClient pointed at it.
 Caller wraps in ExitStack so the container tears down with the run.
 """
 
-import asyncio
 import json
 import logging
 import os
 import sys
-from contextlib import contextmanager
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Final
@@ -36,17 +36,18 @@ if str(_REPO_ROOT) not in sys.path:
 from tests.fixtures.containers import start_postgres  # noqa: E402
 
 
-@contextmanager
-def seeded_timeseries_client() -> "Generator[TimeseriesClient]":
+@asynccontextmanager
+async def seeded_timeseries_client() -> AsyncGenerator[TimeseriesClient]:
     """Spawn postgres + seed measurements + yield a TimeseriesClient.
 
-    Tears down the container on exit. Sets TIMESERIES_URL + SITE_ID in
-    the process env so anything else relying on those (Agent, future
-    tools) sees the same backend.
+    Async-context so callers inside an asyncio loop (eval main()) can
+    await the seed without re-entering asyncio.run(). Tears down the
+    container on exit. Sets TIMESERIES_URL + SITE_ID in process env so
+    anything else relying on those (Agent) sees the same backend.
     """
     pwd = os.environ.get("POSTGRES_PASSWORD", "evalpw")
     with start_postgres(password=pwd, image="postgres:15") as pg:
-        asyncio.run(_seed(pg.url))
+        await _seed(pg.url)
         os.environ["TIMESERIES_URL"] = pg.url
         os.environ["SITE_ID"] = EVAL_SITE_ID
         yield TimeseriesClient(postgres_url=pg.url)
@@ -91,7 +92,3 @@ async def _seed(db_url: str) -> None:
         log.info("eval seed: %d rows into public.measurements", len(rows))
     finally:
         await conn.close()
-
-
-# Avoid `from typing import Generator` at top — keep import surface tight.
-from collections.abc import Generator  # noqa: E402
