@@ -11,8 +11,7 @@ dependencies = [
     "httpx>=0.27.0",
     "python-mcp-server",
     "feedparser>=6.0.12",
-    "fastapi>=0.136.1",
-    "uvicorn>=0.42.0",
+    "pydantic-evals>=1.70.0",
 ]
 
 [dependency-groups]

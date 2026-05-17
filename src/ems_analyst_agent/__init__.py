@@ -1,6 +1,34 @@
-"""Python pydantic-ai library package."""
+"""Analyst-agent library — installed into ems-analyst-server.
+
+Public surface:
+- Agent: chat-loop with prompt + memory + tools + render-spec artifacts
+- AnalystMessage / AnalystArtifact / LineSpec / BarSpec / TableSpec / PieSpec
+  / ToolError: the render-spec contract consumed by ems-hmi via the
+  upstream server.
+"""
 
 from .config import load_config, setup_logger
-from .lib import Agent
+from .lib import Agent, AgentDeps
+from .schemas import (
+    AnalystArtifact,
+    AnalystMessage,
+    BarSpec,
+    LineSpec,
+    PieSpec,
+    TableSpec,
+    ToolError,
+)
 
-__all__ = ["Agent", "load_config", "setup_logger"]
+__all__ = [
+    "Agent",
+    "AgentDeps",
+    "AnalystArtifact",
+    "AnalystMessage",
+    "BarSpec",
+    "LineSpec",
+    "PieSpec",
+    "TableSpec",
+    "ToolError",
+    "load_config",
+    "setup_logger",
+]
