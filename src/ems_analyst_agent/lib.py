@@ -15,6 +15,7 @@ from .config import chat_model, load_config
 from .memory import MemoryService
 from .prompts import load_system_prompt
 from .tools.domain_mcp import create_mcp_server
+from .tools.markets import get_market_data
 from .tools.weather_api import get_weather_forecast
 
 
@@ -58,7 +59,7 @@ class Agent:
             deps_type=AgentDeps,
             # Tool() wrapper required for plain (non-RunContext) callables — pydantic-ai's
             # tools= type expects Tool[T] | (RunContext[T], ...) -> Any
-            tools=[Tool(get_weather_forecast)],
+            tools=[Tool(get_weather_forecast), Tool(get_market_data)],
             toolsets=[mcp_server],
             system_prompt=load_system_prompt(),
         )
