@@ -32,6 +32,8 @@ from pydantic_ai.messages import ModelResponse
 from .eval import EvalCase, _build_model
 from .eval_mcp_cases import MCP_CASES
 from .eval_mcp_scoring import count_mcp_calls, count_mcp_successes, score_case
+from .eval_seed import EVAL_SITE_ID, seeded_timeseries_client
+from .timeseries import TimeseriesClient
 from .eval_report import (
     USD_PER_INPUT_TOK,
     USD_PER_OUTPUT_TOK,
@@ -60,9 +62,11 @@ NEO4J_PASSWORD: str = "evalpw"  # noqa: S105 — testcontainer only
 
 
 async def _run_one_with_mcp(
-    agent: PydanticAgent[object], case: EvalCase
+    agent: PydanticAgent[object],
+    case: EvalCase,
+    timeseries: TimeseriesClient,
 ) -> McpCaseResult:
-    deps = _TelemetryDeps()  # TODO: same caveat as eval._run_one
+    deps = _TelemetryDeps(site_id=EVAL_SITE_ID, timeseries=timeseries)
     t0 = time.perf_counter()
     result = await agent.run(case.prompt, deps=deps)
     elapsed_ms = int((time.perf_counter() - t0) * 1000)
@@ -92,7 +96,9 @@ async def _run_one_with_mcp(
     )
 
 
-async def run_with_mcp(provider: Provider) -> ProviderReport:
+async def run_with_mcp(
+    provider: Provider, timeseries: TimeseriesClient
+) -> ProviderReport:
     """Run MCP_CASES against MCP-enabled agent, serial.
 
     Backend selection:
@@ -132,7 +138,7 @@ async def run_with_mcp(provider: Provider) -> ProviderReport:
             system_prompt=load_system_prompt(),
         )
         results: list[CaseResult] = [
-            await _run_one_with_mcp(agent, case) for case in MCP_CASES
+            await _run_one_with_mcp(agent, case, timeseries) for case in MCP_CASES
         ]
     return ProviderReport(provider=provider, results=results)
 
@@ -142,7 +148,11 @@ async def main() -> None:
     pook.off()  # in case something else turned it on this process
     out_dir = Path(os.environ.get("EVAL_OUT_DIR", "/tmp"))  # noqa: S108  # nosec B108
     out_dir.mkdir(parents=True, exist_ok=True)
-    reports = [await run_with_mcp("ollama"), await run_with_mcp("bedrock")]
+    with seeded_timeseries_client() as timeseries:
+        reports = [
+            await run_with_mcp("ollama", timeseries),
+            await run_with_mcp("bedrock", timeseries),
+        ]
     stamp = datetime.now(UTC).strftime("%Y-%m-%d")
     (out_dir / f"ems-eval-mcp-leaderboard-{stamp}.md").write_text(
         render_mcp_leaderboard(reports), encoding="utf-8"

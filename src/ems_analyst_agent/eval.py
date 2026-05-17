@@ -32,7 +32,9 @@ from .eval_report import (
     render_cost_projection,
     render_leaderboard,
 )
+from .eval_seed import EVAL_SITE_ID, seeded_timeseries_client
 from .prompts import load_system_prompt
+from .timeseries import TimeseriesClient
 from .tools.telemetry import _TelemetryDeps
 from .tools.telemetry_tools import (
     list_devices_where,
@@ -110,17 +112,17 @@ def _build_eval_agent(provider: Provider) -> PydanticAgent[object]:
     )
 
 
-async def _run_one(agent: PydanticAgent[object], case: EvalCase) -> CaseResult:
+async def _run_one(
+    agent: PydanticAgent[object],
+    case: EvalCase,
+    timeseries: TimeseriesClient,
+) -> CaseResult:
     """Run a single case against one agent, capture metrics.
 
-    TODO: telemetry tools now need a real TimeseriesClient via deps.
-    Eval cases that hit query_timeseries/list_devices_where will fail
-    on the assert isinstance(client, TimeseriesClient) check until this
-    spins up a postgres testcontainer + seeds the measurements table.
-    Markets + energy_breakdown stubs still work since they don't touch
-    the client. See `tests/test_timeseries.py` for the seed pattern.
+    `timeseries` is the seeded testcontainer client — telemetry tools
+    need it for query_timeseries / list_devices_where.
     """
-    deps = _TelemetryDeps()
+    deps = _TelemetryDeps(site_id=EVAL_SITE_ID, timeseries=timeseries)
     t0 = time.perf_counter()
     result = await agent.run(case.prompt, deps=deps)
     elapsed_ms = int((time.perf_counter() - t0) * 1000)
@@ -149,20 +151,29 @@ async def _run_one(agent: PydanticAgent[object], case: EvalCase) -> CaseResult:
     )
 
 
-async def run_provider(provider: Provider) -> ProviderReport:
+async def run_provider(
+    provider: Provider, timeseries: TimeseriesClient
+) -> ProviderReport:
     """Serial pass — never run two cases or two providers concurrently."""
     agent = _build_eval_agent(provider)
-    results: list[CaseResult] = [await _run_one(agent, case) for case in CASES]
+    results: list[CaseResult] = [
+        await _run_one(agent, case, timeseries) for case in CASES
+    ]
     return ProviderReport(provider=provider, results=results)
 
 
 async def main() -> None:
-    """Entrypoint: serial Ollama → Bedrock → write /tmp md."""
+    """Entrypoint: spin postgres seed → serial Ollama → Bedrock → write /tmp md."""
     out_dir = Path(os.environ.get("EVAL_OUT_DIR", "/tmp"))  # noqa: S108  # nosec B108
     out_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(UTC).strftime("%Y-%m-%d")
 
-    reports = [await run_provider("ollama"), await run_provider("bedrock")]
+    with seeded_timeseries_client() as timeseries:
+        reports = [
+            await run_provider("ollama", timeseries),
+            await run_provider("bedrock", timeseries),
+        ]
+
     (out_dir / f"ems-eval-leaderboard-{stamp}.md").write_text(
         render_leaderboard(reports), encoding="utf-8"
     )
