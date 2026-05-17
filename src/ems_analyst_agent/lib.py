@@ -13,6 +13,7 @@ from python_mcp_server.clients import make_embedder
 
 from .config import chat_model, load_config
 from .memory import MemoryService
+from .prompts import load_system_prompt
 from .tools.domain_mcp import create_mcp_server
 from .tools.weather_api import get_weather_forecast
 
@@ -59,11 +60,7 @@ class Agent:
             # tools= type expects Tool[T] | (RunContext[T], ...) -> Any
             tools=[Tool(get_weather_forecast)],
             toolsets=[mcp_server],
-            system_prompt=(
-                "You are a helpful assistant with access to knowledge graphs, "
-                "APIs, and semantic memory. Use your tools to provide accurate, "
-                "grounded responses."
-            ),
+            system_prompt=load_system_prompt(),
         )
 
         # Register dynamic system prompt for memory injection

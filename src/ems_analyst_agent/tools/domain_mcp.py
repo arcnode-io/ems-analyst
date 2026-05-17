@@ -12,7 +12,7 @@ def create_mcp_server() -> MCPServerStdio:
     """Spawn the python-mcp-server child with parent-process env passthrough.
 
     The child reads its backend selection from env vars at startup:
-      - GRAPH_URL → Neo4j / Aura (commercial)
+      - GRAPH_URL → Neo4j selfhosted/ Aura (commercial)
       - NEPTUNE_HOST + AOSS_HOST → Neptune + AOSS (defense)
       - VECTOR_URL → pgvector (both variants)
     Compose populates these via env_file; tests set them directly.

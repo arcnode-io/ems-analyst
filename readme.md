@@ -26,14 +26,15 @@ rectangle domain_mcp_server {
 
 
 cloud openweather 
-cloud yes_energy 
-cloud permutable 
+cloud gridstatus_io 
+cloud energy_news_rss 
 query_logic -u-> knowledge_graph: Cypher
 query_logic -u-> vector_knowledge_base: SQL
+query_logic -d- tool_api
 tool_api -r-> vector_chat_history: SQL
 tool_api -d-> openweather: HTTP
-tool_api -d-> yes_energy: HTTP
-tool_api -d-> permutable: HTTP
+tool_api -d-> gridstatus_io: HTTP
+tool_api -d-> energy_news_rss: HTTP
 conversational_llm -r-> tool_api
 
 ```
@@ -70,7 +71,7 @@ conversational_llm -r-> tool_api
 
 - **Market Data**: YES Energy API for real-time energy market information
 
-- **Geopolitical Intelligence**: Permutable AI for events affecting energy markets
+- **Geopolitical Intelligence**: Energy News RSS Feeds:Reuters Energy, Bloomberg Energy, OilPrice.com, S&P Global Commodity Insights all publish feeds. Aggregate and done.
 
 ## Prompts
 
@@ -78,7 +79,6 @@ conversational_llm -r-> tool_api
 
 - `system_analyst.md`: Core energy analyst personality and capabilities
 
-- `system_safety.md`: Safety guidelines for energy recommendations
 
 ### Task Prompts
 
@@ -98,19 +98,11 @@ conversational_llm -r-> tool_api
 
 - `recommendation.md`: Actionable recommendations
 
-## Domain Knowledge
+## Domain MCP Server
 
 ### Vector Database & Knowledge Graph Content
+- seeded with relavant corpus of text to answer questions energy economics,  industrial protocols, BESS, and datacenter management. As well as regulatory compliance like NERC-CIP
 
-Both systems are trained on the same energy domain books for consistency:
-
-- **Energy Trading Books**: Market fundamentals and trading strategies
-
-- **Power Systems Engineering Book**: Grid operations and electrical engineering
-
-- **The BESS Book **: Battery energy storage system book
-
-- **Historical Market Data**: Past energy market events and patterns
 
 ### Knowledge Graph Entities
 
@@ -144,9 +136,9 @@ Both systems are trained on the same energy domain books for consistency:
 │   │   ├── __init__.py
 │   │   ├── weather.py          # OpenWeather API integration
 │   │   ├── weather_test.py
-│   │   ├── markets.py          # YES Energy API integration
+│   │   ├── markets.py          # gridtatus.io
 │   │   ├── markets_test.py
-│   │   ├── geopolitical.py     # Permutable AI integration
+│   │   ├── geopolitical.py     # Energy News RSS
 │   │   └── geopolitical_test.py
 │   └── utils/
 │       ├── __init__.py
@@ -155,7 +147,6 @@ Both systems are trained on the same energy domain books for consistency:
 ├── prompts/
 │   ├── system/
 │   │   ├── system_analyst.md
-│   │   └── system_safety.md
 │   ├── tasks/
 │   │   ├── market_analysis.md
 │   │   ├── weather_impact.md
