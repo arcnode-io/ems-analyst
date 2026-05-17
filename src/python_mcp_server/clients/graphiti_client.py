@@ -2,11 +2,15 @@
 
 import logging
 import os
-from typing import Optional
+from typing import Any, Optional, cast
 from urllib.parse import urlsplit, urlunsplit
 
 from graphiti_core import Graphiti
+from graphiti_core.driver import record_parsers as _record_parsers
+from graphiti_core.driver.neptune.operations import search_ops as _neptune_search_ops
 from graphiti_core.driver.neptune_driver import NeptuneDriver
+from graphiti_core.driver.search_interface.search_interface import SearchInterface
+from graphiti_core.edges import EntityEdge
 
 from ..models import EntityMetadata, SearchResult
 from .graphiti_bedrock import (
@@ -18,6 +22,36 @@ from .graphiti_bedrock import (
 log = logging.getLogger(__name__)
 
 
+def _patch_graphiti_neptune() -> None:
+    """One of two upstream bugs in graphiti-core 0.28.2's Neptune integration.
+
+    entity_edge_from_record rejects episodes=None. Neptune doesn't support
+    multi-valued edge properties, so our seed CSV omits the column entirely.
+    The new ops module's cypher uses split(e.episodes, ',') which returns
+    NULL when the property is absent, and EntityEdge.episodes is typed
+    list[str] (not optional). Default to [] when missing.
+
+    The second upstream bug is handled inline in from_env() — see the
+    `driver.search_interface = cast(...)` comment there.
+    """
+    _orig = _record_parsers.entity_edge_from_record
+
+    # Signature matches upstream entity_edge_from_record(record: Any) -> EntityEdge.
+    def _safe(record: Any) -> EntityEdge:  # noqa: ANN401  matches upstream contract
+        if record.get("episodes") is None:
+            record["episodes"] = []
+        return _orig(record)
+
+    # Patch via __dict__ — direct attribute assignment trips ty's
+    # function-name identity check on entity_edge_from_record's signature.
+    # We're deliberately swapping in a same-signature wrapper.
+    _record_parsers.__dict__["entity_edge_from_record"] = _safe
+    _neptune_search_ops.__dict__["entity_edge_from_record"] = _safe
+
+
+_patch_graphiti_neptune()
+
+
 class GraphitiClient:
     """Client for Graphiti knowledge graph operations."""
 
@@ -27,29 +61,6 @@ class GraphitiClient:
         Prefer GraphitiClient.from_env() — direct construction is for tests.
         """
         self.graphiti = graphiti
-        self._cached_group_ids: list[str] | None = None
-
-    async def _discover_group_ids(self) -> list[str]:
-        """One-time scan of distinct group_ids across vertices, cached on instance.
-
-        Workaround for the graphiti Neptune driver's MissingParameter bug —
-        see search() docstring. Result is cached because the seed is
-        immutable per deployment.
-        """
-        if self._cached_group_ids is not None:
-            return self._cached_group_ids
-        # Use the underlying driver to run a Cypher discovery query.
-        # NeptuneDriver exposes `execute_query` via its client.
-        try:
-            records, _, _ = await self.graphiti.driver.execute_query(
-                "MATCH (n:Entity) RETURN DISTINCT n.group_id AS g"
-            )
-            self._cached_group_ids = [r["g"] for r in records if r.get("g")]
-            log.info("discovered %d distinct group_ids", len(self._cached_group_ids))
-        except Exception:
-            log.exception("failed to discover group_ids; using empty list")
-            self._cached_group_ids = []
-        return self._cached_group_ids
 
     @classmethod
     def from_env(cls) -> "GraphitiClient":
@@ -69,25 +80,31 @@ class GraphitiClient:
         neptune_host = os.environ.get("NEPTUNE_HOST")
         aoss_host = os.environ.get("AOSS_HOST")
         if neptune_host and aoss_host:
-            # Defense (Bedrock cloud) — wire graphiti's three clients to
-            # Bedrock so search_knowledge / verify_fact don't reach for
-            # OPENAI_API_KEY (which we scrubbed per ADR-024). See
-            # graphiti_bedrock module + #64.
-            #
-            # Strip `https://` from AOSS_HOST if present — graphiti's
-            # opensearch client prepends the scheme itself; passing it
-            # twice makes opensearch-py wrap the URL as an IPv6 literal:
-            #   https://[https://abc.aoss.amazonaws.com]:443/...
-            # AossCollection.CollectionEndpoint from CFN includes the
-            # scheme by default.
+            # Strip `https://` — graphiti's opensearch client prepends scheme
+            # itself; double-prefix produces an IPv6-literal-style URL.
             clean_aoss = aoss_host.removeprefix("https://").removeprefix("http://")
+            driver = NeptuneDriver(
+                host=f"neptune-db://{neptune_host}",
+                aoss_host=clean_aoss,
+            )
+            # Bug 2 — NeptuneDriver builds a NeptuneSearchOperations and assigns
+            # it to _search_ops, but graphiti's dispatcher in
+            # graphiti_core/search/search_utils.py only checks driver.search_interface
+            # (None by default). Falling through routes every search through
+            # the legacy Neptune branch (lines 225-268) which appends a second
+            # WHERE clause to a cypher that already has one -> MalformedQueryException.
+            # Wiring the new ops module to search_interface routes the dispatcher
+            # to NeptuneSearchOperations.edge_fulltext_search which constructs
+            # the cypher correctly.
+            # NeptuneSearchOperations is duck-compatible with SearchInterface
+            # (same async method names + signatures used by the dispatcher) but
+            # extends SearchOperations, not SearchInterface, so the type checker
+            # needs an explicit cast.
+            driver.search_interface = cast(SearchInterface, driver.search_ops)
             llm = BedrockLLMClient()
             return cls(
                 Graphiti(
-                    graph_driver=NeptuneDriver(
-                        host=f"neptune-db://{neptune_host}",
-                        aoss_host=clean_aoss,
-                    ),
+                    graph_driver=driver,
                     embedder=BedrockEmbedderClient(),
                     llm_client=llm,
                     cross_encoder=BedrockCrossEncoderClient(llm=llm),
@@ -106,18 +123,10 @@ class GraphitiClient:
 
         Raises the underlying Graphiti error on failure — no silent empty list.
         """
-        # Reason: graphiti's Neptune driver emits
-        # `WHERE e.group_id IN $group_ids` whenever group_ids is non-None,
-        # but a None default + buggy param propagation triggers
-        # MalformedQueryException(MissingParameter) on empty cases. Pass
-        # the actual seeded group_ids so the WHERE matches and Neptune
-        # gets a valid param.
-        group_ids = await self._discover_group_ids()
         try:
             raw_results = await self.graphiti.search(
                 query=query,
                 center_node_uuid=center_node_uuid,
-                group_ids=group_ids,
             )
         except Exception:
             log.exception("graphiti search failed (query=%r)", query)
