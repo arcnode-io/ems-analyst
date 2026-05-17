@@ -6,7 +6,6 @@ Full-stack HTTP integration lives in `tests/test_integration.py` per
 
 from .geopolitical import _extract_headlines
 
-
 _SAMPLE_RSS = """<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0"><channel>
   <title>Fake Energy Feed</title>

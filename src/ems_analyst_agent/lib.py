@@ -28,7 +28,13 @@ from .tools.weather_api import get_weather_forecast
 # Constructor-time guard so we never accidentally register a mutating
 # tool on the analyst — frontend handoff Q2 (read-only by design).
 _FORBIDDEN_VERB_PREFIXES: tuple[str, ...] = (
-    "set_", "dispatch_", "command_", "write_", "delete_", "create_", "update_",
+    "set_",
+    "dispatch_",
+    "command_",
+    "write_",
+    "delete_",
+    "create_",
+    "update_",
 )
 
 
@@ -69,6 +75,10 @@ class Agent:
         # populates these via env_file; tests set them before constructing Agent.
         mcp_server = create_mcp_server()
 
+        # Telemetry tools take RunContext[_ArtifactSink] (a structural
+        # subset of AgentDeps). pydantic-ai's Tool generic is invariant
+        # so ty flags this; safe at runtime since AgentDeps satisfies
+        # _ArtifactSink (artifacts: list[AnalystArtifact]).
         tools = [
             Tool(get_weather_forecast),
             Tool(get_market_data),
@@ -77,15 +87,18 @@ class Agent:
             Tool(list_devices_where),
             Tool(query_energy_breakdown),
         ]
-        _assert_read_only(tools)
+        _assert_read_only(tools)  # ty: ignore[invalid-argument-type]
 
         # Create Pydantic AI agent with dependency injection.
-        self.agent: PydanticAgent[AgentDeps] = PydanticAgent(
-            chat_model(config.settings),
-            deps_type=AgentDeps,
-            tools=tools,
-            toolsets=[mcp_server],
-            system_prompt=load_system_prompt(),
+        # ty cannot reconcile the invariant Tool[T] generic; safe at runtime.
+        self.agent: PydanticAgent[AgentDeps] = (
+            PydanticAgent(  # ty: ignore[invalid-assignment]
+                chat_model(config.settings),
+                deps_type=AgentDeps,
+                tools=tools,  # ty: ignore[invalid-argument-type]
+                toolsets=[mcp_server],
+                system_prompt=load_system_prompt(),
+            )
         )
 
         # Register dynamic system prompt for memory injection
@@ -134,14 +147,16 @@ class Agent:
         embedding = await self.memory_service.generate_embedding(prompt)
         await self.memory_service.store_memory(f"User stated: {prompt}", embedding)
         content: list[dict[str, object]] = [
-            {"type": "text", "text": str(result.output)}
+            {"type": "text", "text": str(result.output)},
+            *(
+                {"type": "artifact", "artifact": art.model_dump(by_alias=True)}
+                for art in deps.artifacts
+            ),
         ]
-        for art in deps.artifacts:
-            content.append({"type": "artifact", "artifact": art.model_dump(by_alias=True)})
         return AnalystMessage.model_validate({"role": "assistant", "content": content})
 
 
-def _assert_read_only(tools: list[Tool[AgentDeps]]) -> None:
+def _assert_read_only(tools: list[Tool[object]]) -> None:
     """Fail fast at Agent construction if a mutating-named tool sneaks in."""
     for tool in tools:
         # pydantic-ai Tool exposes the function via .function
@@ -156,8 +171,8 @@ def _assert_read_only(tools: list[Tool[AgentDeps]]) -> None:
 
 def _first_text(msg: AnalystMessage) -> str:
     """Concatenate text content; used by the legacy str-returning chat()."""
-    parts: list[str] = []
-    for entry in msg.content:
-        if entry.type == "text":
-            parts.append(entry.text)
-    return "\n".join(parts)
+    from .schemas import TextContent
+
+    return "\n".join(
+        entry.text for entry in msg.content if isinstance(entry, TextContent)
+    )

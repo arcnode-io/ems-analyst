@@ -37,41 +37,66 @@ class ProviderReport:
 
     @property
     def total_cost_usd(self) -> float:
+        """Sum of per-case Bedrock-equivalent cost in USD."""
         return sum(r.cost_usd for r in self.results)
 
     @property
     def avg_latency_ms(self) -> float:
+        """Mean per-case latency in ms (0 when no cases)."""
         return sum(r.latency_ms for r in self.results) / max(len(self.results), 1)
 
     @property
     def correctness_rate(self) -> float:
+        """Mean correctness score across cases (0..1)."""
         return sum(r.correctness for r in self.results) / max(len(self.results), 1)
 
 
 def render_leaderboard(reports: list[ProviderReport]) -> str:
-    """Markdown leaderboard — one section per provider + totals."""
+    """Markdown leaderboard — one section per provider + totals.
+
+    Cost column is **hypothetical-Bedrock-equivalent** for every provider
+    so cross-provider comparison is direct. Ollama bills nothing in cash;
+    its $$ column is what the same token usage would cost on Bedrock.
+    """
     lines: list[str] = [
         f"# Analyst eval leaderboard — {datetime.now(UTC).strftime('%Y-%m-%d %H:%MZ')}",
+        "",
+        "_Note: $$ priced at Bedrock Sonnet 4.6 ($3 in / $15 out per MTok "
+        "+ ~10% CRIS surcharge) regardless of provider, so the column is "
+        "comparable across providers. Ollama bills $0 in cash — its $$ row "
+        "is the hypothetical Bedrock-equivalent cost._",
         "",
     ]
     for rep in reports:
         lines.append(f"## {rep.provider}")
         lines.append("")
-        lines.append("| Case | latency_ms | in_tok | out_tok | artifacts | correct | $$ |")
+        lines.append(
+            "| Case | latency_ms | in_tok | out_tok | artifacts | correct | $$_eq |"
+        )
         lines.append("|---|---:|---:|---:|---|---:|---:|")
-        for r in rep.results:
-            lines.append(
-                f"| {r.case} | {r.latency_ms} | {r.input_tokens} | {r.output_tokens} "
-                f"| {','.join(r.artifact_kinds) or '—'} | {r.correctness:.2f} "
-                f"| ${r.cost_usd:.5f} |"
-            )
+        lines.extend(
+            f"| {r.case} | {r.latency_ms} | {r.input_tokens} | {r.output_tokens} "
+            f"| {','.join(r.artifact_kinds) or '—'} | {r.correctness:.2f} "
+            f"| ${r.cost_usd:.5f} |"
+            for r in rep.results
+        )
         lines.append("")
         lines.append(
             f"**Totals — avg latency {rep.avg_latency_ms:.0f} ms · "
             f"correctness {rep.correctness_rate * 100:.0f}% · "
-            f"cost ${rep.total_cost_usd:.4f}**"
+            f"cost $eq {rep.total_cost_usd:.4f}**"
         )
         lines.append("")
+    if len(reports) >= 2:
+        a, b = reports[0], reports[1]
+        speedup = a.avg_latency_ms / max(b.avg_latency_ms, 1.0)
+        faster, slower = (b, a) if speedup > 1 else (a, b)
+        lines.append(
+            f"## TL;DR\n\n**{faster.provider}** was "
+            f"**{max(speedup, 1 / speedup):.1f}x faster** than {slower.provider} "
+            f"on this surface, with both at {a.correctness_rate * 100:.0f}% "
+            f"correctness."
+        )
     return "\n".join(lines)
 
 

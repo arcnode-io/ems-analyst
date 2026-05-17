@@ -55,3 +55,9 @@ ignore = [
 [lint.pylint]
 max-args = 5
 max-statements = 30
+
+[lint.per-file-ignores]
+# Tests: classes + methods are self-describing via AAA pattern. Don't
+# burn docstring tax on `test_*`.
+"*_test.py" = ["D101", "D102", "D103"]
+"tests/*" = ["D101", "D102", "D103"]

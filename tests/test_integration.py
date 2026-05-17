@@ -301,9 +301,9 @@ class TestIntegration:
                 "Top energy headline: OPEC+ cut sends Brent crude to $95."
             )
             for url in ENERGY_FEED_URLS:
-                pook.get(url).persist().reply(200).type(
-                    "application/rss+xml"
-                ).body(sample_rss)
+                pook.get(url).persist().reply(200).type("application/rss+xml").body(
+                    sample_rss
+                )
 
         try:
             agent = Agent()

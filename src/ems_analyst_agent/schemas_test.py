@@ -46,7 +46,9 @@ class TestLineSpec:
         )
 
         # Act
-        re_parsed = LineSpec.model_validate_json(original.model_dump_json(by_alias=True))
+        re_parsed = LineSpec.model_validate_json(
+            original.model_dump_json(by_alias=True)
+        )
 
         # Assert
         assert re_parsed == original
@@ -102,26 +104,28 @@ class TestAnalystMessage:
 
     def test_interleaved_text_and_artifact(self) -> None:
         # Arrange
-        msg = AnalystMessage(
-            role="assistant",
-            content=[
-                {"type": "text", "text": "BESS-01 SoC trended down."},
-                {
-                    "type": "artifact",
-                    "artifact": {
-                        "kind": "pie",
-                        "spec": {
-                            "title": "Energy by source",
-                            "unit": "MWh",
-                            "slices": [
-                                {"label": "solar", "value": 120.5},
-                                {"label": "wind", "value": 88.2},
-                            ],
-                            "dataAsOf": "2026-05-16T12:00:00Z",
+        msg = AnalystMessage.model_validate(
+            {
+                "role": "assistant",
+                "content": [
+                    {"type": "text", "text": "BESS-01 SoC trended down."},
+                    {
+                        "type": "artifact",
+                        "artifact": {
+                            "kind": "pie",
+                            "spec": {
+                                "title": "Energy by source",
+                                "unit": "MWh",
+                                "slices": [
+                                    {"label": "solar", "value": 120.5},
+                                    {"label": "wind", "value": 88.2},
+                                ],
+                                "dataAsOf": "2026-05-16T12:00:00Z",
+                            },
                         },
                     },
-                },
-            ],
+                ],
+            }
         )
 
         # Act
@@ -139,18 +143,20 @@ class TestTableSpec:
 
     def test_round_trip_with_severity(self) -> None:
         # Arrange
-        spec = TableSpec(
-            title="Devices in alarm",
-            columns=[
-                {"key": "device", "label": "Device"},
-                {"key": "soc", "label": "SoC", "align": "right", "unit": "%"},
-            ],
-            rows=[
-                {"device": "BESS-01", "soc": 12.3},
-                {"device": "BESS-03", "soc": None},
-            ],
-            rowSeverity=["alarm", None],
-            dataAsOf="2026-05-16T12:00:00Z",
+        spec = TableSpec.model_validate(
+            {
+                "title": "Devices in alarm",
+                "columns": [
+                    {"key": "device", "label": "Device"},
+                    {"key": "soc", "label": "SoC", "align": "right", "unit": "%"},
+                ],
+                "rows": [
+                    {"device": "BESS-01", "soc": 12.3},
+                    {"device": "BESS-03", "soc": None},
+                ],
+                "rowSeverity": ["alarm", None],
+                "dataAsOf": "2026-05-16T12:00:00Z",
+            }
         )
 
         # Act
@@ -166,14 +172,16 @@ class TestPieSpec:
 
     def test_round_trip(self) -> None:
         # Arrange
-        spec = PieSpec(
-            title="Energy",
-            unit="MWh",
-            slices=[
-                {"label": "solar", "value": 120.5},
-                {"label": "wind", "value": 88.2},
-            ],
-            dataAsOf="2026-05-16T12:00:00Z",
+        spec = PieSpec.model_validate(
+            {
+                "title": "Energy",
+                "unit": "MWh",
+                "slices": [
+                    {"label": "solar", "value": 120.5},
+                    {"label": "wind", "value": 88.2},
+                ],
+                "dataAsOf": "2026-05-16T12:00:00Z",
+            }
         )
 
         # Act

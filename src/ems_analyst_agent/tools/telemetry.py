@@ -44,7 +44,10 @@ def _now() -> str:
 
 def _error_artifact(code: str, message: str) -> AnalystArtifact:
     return AnalystArtifact.model_validate(
-        {"kind": "error", "spec": {"code": code, "message": message, "dataAsOf": _now()}}
+        {
+            "kind": "error",
+            "spec": {"code": code, "message": message, "dataAsOf": _now()},
+        }
     )
 
 
@@ -69,7 +72,7 @@ def build_timeseries(
     ]
     spec = LineSpec.model_validate(
         {
-            "title": f"{device_id} {measurement}",
+            "title": f"{device_id} {measurement} ({window}, {aggregation})",
             "xAxis": {"label": "Time", "kind": "time"},
             "yAxis": {"label": measurement, "unit": "%"},
             "series": [{"label": device_id, "points": points}],
@@ -83,6 +86,7 @@ def build_timeseries(
 
 def build_device_list(
     status: list[str] | None = None,
+    template: str | None = None,
 ) -> AnalystArtifact:
     """Build a TableSpec artifact for devices matching status filter (STUB)."""
     # TODO: replace with device_registry.query(template, status, measurement_filter)
@@ -93,20 +97,27 @@ def build_device_list(
     ]
     if status:
         rows = [r for r in rows if r["status"] in status]
-    spec = TableSpec(
-        title="Device list",
-        columns=[
-            {"key": "device", "label": "Device"},
-            {"key": "template", "label": "Template"},
-            {"key": "status", "label": "Status"},
-            {"key": "soc", "label": "SoC", "align": "right", "unit": "%"},
-        ],
-        rows=rows,
-        row_severity=[
-            r["status"] if r["status"] in ("ok", "warn", "alarm") else None
-            for r in rows
-        ],
-        data_as_of=_now(),
+    if template:
+        rows = [r for r in rows if r["template"] == template]
+    spec = TableSpec.model_validate(
+        {
+            "title": (
+                f"Device list ({template or 'any'} / "
+                f"{','.join(status) if status else 'any'})"
+            ),
+            "columns": [
+                {"key": "device", "label": "Device"},
+                {"key": "template", "label": "Template"},
+                {"key": "status", "label": "Status"},
+                {"key": "soc", "label": "SoC", "align": "right", "unit": "%"},
+            ],
+            "rows": rows,
+            "rowSeverity": [
+                r["status"] if r["status"] in ("ok", "warn", "alarm") else None
+                for r in rows
+            ],
+            "dataAsOf": _now(),
+        }
     )
     return AnalystArtifact.model_validate(
         {"kind": "table", "spec": spec.model_dump(by_alias=True)}
@@ -115,15 +126,18 @@ def build_device_list(
 
 def build_markets(
     window: str = "today",
+    group_by: Literal["market", "hour"] = "market",
 ) -> AnalystArtifact:
     """Build a BarSpec artifact for revenue by market (STUB)."""
     # TODO: replace with revenue_service.query(window, group_by)
-    spec = BarSpec(
-        title=f"Revenue by market ({window})",
-        x_axis={"label": "Market", "categories": ["DAM", "RTM", "FREQ"]},
-        y_axis={"label": "Revenue", "unit": "USD"},
-        series=[{"label": "site_1", "values": [12340.5, 6789.1, 2341.7]}],
-        data_as_of=_now(),
+    spec = BarSpec.model_validate(
+        {
+            "title": f"Revenue by {group_by} ({window})",
+            "xAxis": {"label": "Market", "categories": ["DAM", "RTM", "FREQ"]},
+            "yAxis": {"label": "Revenue", "unit": "USD"},
+            "series": [{"label": "site_1", "values": [12340.5, 6789.1, 2341.7]}],
+            "dataAsOf": _now(),
+        }
     )
     return AnalystArtifact.model_validate(
         {"kind": "bar", "spec": spec.model_dump(by_alias=True)}
@@ -136,15 +150,17 @@ def build_energy_breakdown(
 ) -> AnalystArtifact:
     """Build a PieSpec artifact for energy mix breakdown (STUB)."""
     # TODO: replace with energy_service.breakdown(window, by)
-    spec = PieSpec(
-        title=f"Energy by {by} ({window})",
-        unit="MWh",
-        slices=[
-            {"label": "solar", "value": 120.5},
-            {"label": "wind", "value": 88.2},
-            {"label": "grid_import", "value": 42.1},
-        ],
-        data_as_of=_now(),
+    spec = PieSpec.model_validate(
+        {
+            "title": f"Energy by {by} ({window})",
+            "unit": "MWh",
+            "slices": [
+                {"label": "solar", "value": 120.5},
+                {"label": "wind", "value": 88.2},
+                {"label": "grid_import", "value": 42.1},
+            ],
+            "dataAsOf": _now(),
+        }
     )
     return AnalystArtifact.model_validate(
         {"kind": "pie", "spec": spec.model_dump(by_alias=True)}
@@ -185,10 +201,10 @@ async def list_devices_where(
     status: list[str] | None = None,
 ) -> str:
     """Read-only device list filtered by template / status (STUB)."""
-    art = build_device_list(status)
+    art = build_device_list(status=status, template=template)
     ctx.deps.artifacts.append(art)
     status_str = ",".join(status) if status else "any"
-    return f"Listed devices with status={status_str}."
+    return f"Listed devices with template={template or 'any'}, status={status_str}."
 
 
 async def query_markets(
@@ -197,7 +213,7 @@ async def query_markets(
     group_by: Literal["market", "hour"] = "market",
 ) -> str:
     """Read-only revenue-by-market query (STUB)."""
-    art = build_markets(window)
+    art = build_markets(window=window, group_by=group_by)
     ctx.deps.artifacts.append(art)
     return f"Computed market revenue for window={window}, group_by={group_by}."
 

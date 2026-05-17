@@ -10,7 +10,9 @@ from .eval_report import (
 )
 
 
-def _case(name: str, lat: int, inp: int, out: int, art: list[str], corr: float) -> CaseResult:
+def _case(
+    name: str, lat: int, inp: int, out: int, art: list[str], corr: float
+) -> CaseResult:
     cost = inp * USD_PER_INPUT_TOK + out * USD_PER_OUTPUT_TOK
     return CaseResult(
         case=name,
@@ -28,7 +30,10 @@ class TestProviderReport:
         # Arrange
         report = ProviderReport(
             provider="bedrock",
-            results=[_case("a", 100, 200, 50, ["line"], 1.0), _case("b", 300, 100, 25, [], 0.5)],
+            results=[
+                _case("a", 100, 200, 50, ["line"], 1.0),
+                _case("b", 300, 100, 25, [], 0.5),
+            ],
         )
 
         # Assert

@@ -643,7 +643,6 @@ dependencies = [
     { name = "pgvector" },
     { name = "pydantic" },
     { name = "pydantic-ai" },
-    { name = "pydantic-evals" },
     { name = "python-mcp-server" },
     { name = "pyyaml" },
 ]
@@ -677,7 +676,6 @@ requires-dist = [
     { name = "pgvector", specifier = ">=0.3.6" },
     { name = "pydantic", specifier = ">=2.9.2" },
     { name = "pydantic-ai", specifier = ">=0.0.49" },
-    { name = "pydantic-evals", specifier = ">=1.70.0" },
     { name = "python-mcp-server", git = "https://gitlab.com/engineering-with-ai/python-mcp-server.git" },
     { name = "pyyaml", specifier = ">=6.0.2" },
 ]

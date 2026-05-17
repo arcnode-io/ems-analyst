@@ -98,7 +98,7 @@ def _build_eval_agent(provider: Provider) -> PydanticAgent[object]:
     Reason: keeps the eval focused on the tool-calling surface; semantic
     memory + KG adds variance that swamps cross-model deltas.
     """
-    return PydanticAgent(
+    return PydanticAgent(  # ty: ignore[invalid-return-type,no-matching-overload]
         _build_model(provider),
         tools=[
             Tool(query_timeseries),
@@ -144,15 +144,13 @@ async def _run_one(agent: PydanticAgent[object], case: EvalCase) -> CaseResult:
 async def run_provider(provider: Provider) -> ProviderReport:
     """Serial pass — never run two cases or two providers concurrently."""
     agent = _build_eval_agent(provider)
-    results: list[CaseResult] = []
-    for case in CASES:
-        results.append(await _run_one(agent, case))
+    results: list[CaseResult] = [await _run_one(agent, case) for case in CASES]
     return ProviderReport(provider=provider, results=results)
 
 
 async def main() -> None:
     """Entrypoint: serial Ollama → Bedrock → write /tmp md."""
-    out_dir = Path(os.environ.get("EVAL_OUT_DIR", "/tmp"))
+    out_dir = Path(os.environ.get("EVAL_OUT_DIR", "/tmp"))  # noqa: S108  # nosec B108
     out_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(UTC).strftime("%Y-%m-%d")
 
