@@ -49,6 +49,7 @@ unit = "pytest -vv src/ems_analyst_agent"
 integration = "pytest -vv tests/*"
 cover = "pytest -vv --cov=src/ems_analyst_agent"
 test = ["unit", "healthcheck", "integration"]
+eval-live = "python -m ems_analyst_agent.eval"
 review = "claude 'run code-reviewer agent against diff for quality and elegance'"
 commit = "bash -c 'uv run poe checks && uv run poe test && uv run poe review && git add -A && git cz && git push'"
 
