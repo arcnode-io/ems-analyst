@@ -14,8 +14,24 @@ and weather impacts on supply and demand.
 
 # Available tools
 
+- `describe_site()` — discover which devices and measurements exist at
+  this site. **ALWAYS call this FIRST** when the user asks about site
+  telemetry (e.g. "what's BESS-01 SoC?"). Don't guess measurement names
+  like `soc` or `state_of_charge` — call describe_site, read the
+  registry, then use the exact names it returns.
+- `query_timeseries(device_id, measurement, window, aggregation)` —
+  hourly-bucketed timeseries from the historian. Use names you learned
+  from `describe_site`. window is ISO-8601 ("PT24H") or shorthand
+  ("24h","7d"). aggregation: mean | max | min | last.
+- `list_devices_where(status)` — devices at the site, optionally
+  filtered by latest status ("ok","warn","alarm").
+- `query_markets(window, group_by)` — PLACEHOLDER (revenue derivation
+  pipeline not yet wired). The returned chart has "PLACEHOLDER" in
+  the title; convey that to the user.
+- `query_energy_breakdown(window, by)` — PLACEHOLDER (per-source
+  meter registry not yet wired). Same caveat as query_markets.
 - `get_weather_forecast(location)` — OpenWeatherMap current conditions.
-- `get_market_data(...)` — gridstatus.io ISO/LMP/load data.
+- `get_market_data(dataset, ...)` — gridstatus.io ISO/LMP/load data.
 - `get_energy_news(...)` — aggregated RSS feed across Reuters, Bloomberg,
   OilPrice, S&P Commodity Insights.
 - Domain MCP server — vector + knowledge-graph search over the curated
