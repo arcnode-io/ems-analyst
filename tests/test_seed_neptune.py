@@ -6,12 +6,15 @@ CI doesn't need real AWS / Neptune access. No real Neptune emulator
 exists; bulk-loader behavior is the contract pook verifies.
 """
 
+from unittest.mock import AsyncMock
+
 import pook
 import pytest
 
 from src.python_mcp_server.seed import seed_graph_neptune
 
 NEPTUNE_HOST = "neptune.example.invalid"
+AOSS_HOST = "aoss.example.invalid"
 LOADER_ROLE = "arn:aws:iam::123456789012:role/NeptuneLoaderRole"
 LOAD_ID = "abc-load-id-xyz"
 
@@ -24,11 +27,24 @@ def _env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AWS_REGION", "us-east-1")
     monkeypatch.setenv("NEPTUNE_HOST", NEPTUNE_HOST)
     monkeypatch.setenv("NEPTUNE_LOADER_ROLE_ARN", LOADER_ROLE)
+    monkeypatch.setenv("AOSS_HOST", AOSS_HOST)
+
+
+@pytest.fixture
+def _stub_aoss(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
+    """Replace _populate_aoss_indexes — its own pook coverage lives in
+    a dedicated unit test (would otherwise require mocking graphiti's
+    full NeptuneDriver init + OpenSearch client + 4 index-create POSTs)."""
+    stub = AsyncMock(return_value=None)
+    monkeypatch.setattr("src.python_mcp_server.seed._populate_aoss_indexes", stub)
+    return stub
 
 
 @pytest.mark.asyncio
-async def test_seed_graph_neptune_starts_load_and_writes_marker() -> None:
-    """Happy path — marker absent, load completes, marker written."""
+async def test_seed_graph_neptune_starts_load_and_writes_marker(
+    _stub_aoss: AsyncMock,
+) -> None:
+    """Happy path — marker absent, load completes, AOSS populated, marker written."""
     # Arrange — pook intercepts the openCypher marker-check, the loader
     # POST, the GET status poll, and the marker-write MERGE.
     pook.on()
@@ -55,8 +71,10 @@ async def test_seed_graph_neptune_starts_load_and_writes_marker() -> None:
         # Act
         await seed_graph_neptune()
 
-        # Assert — all 4 mocks consumed
+        # Assert — all 4 mocks consumed + AOSS populate called between
+        # Neptune-load-complete and marker-write
         assert pook.isdone(), f"pending mocks: {pook.pending()}"
+        _stub_aoss.assert_awaited_once()
     finally:
         pook.off()
 

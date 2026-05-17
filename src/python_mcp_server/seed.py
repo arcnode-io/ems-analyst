@@ -21,12 +21,15 @@ Markers:
 """
 
 import asyncio
+import csv
 import gzip
+import io
 import json
 import logging
 import os
 import time
 import urllib.request
+from collections.abc import Iterator
 
 import asyncpg
 import boto3
@@ -50,6 +53,16 @@ GRAPH_MARKER_SLICE = "graph"
 # original — vertex multi-vals are fine. Original kept at graph-neptune/
 # for Aura/self-hosted Neo4j paths that don't have this constraint.
 NEPTUNE_S3_SOURCE = "s3://arcnode-public/seed/graph-neptune-v2/"
+NEPTUNE_S3_HTTPS_BASE = (
+    "https://arcnode-public.s3.us-east-1.amazonaws.com/seed/graph-neptune-v2/"
+)
+
+# graphiti's NeptuneDriver expects these AOSS indexes pre-populated to
+# answer search queries. We populate them post-Neptune-load by streaming
+# the same CSVs and projecting to the field subset graphiti indexes —
+# see aoss_indices definition in graphiti_core.driver.neptune_driver.
+_NODE_AOSS_FIELDS: tuple[str, ...] = ("uuid", "name", "summary", "group_id")
+_EDGE_AOSS_FIELDS: tuple[str, ...] = ("uuid", "name", "fact", "group_id")
 NEPTUNE_LOAD_POLL_INTERVAL_SEC = 10
 NEPTUNE_LOAD_MAX_WAIT_SEC = 1800  # 30 min — bulk load of ~400MB is < 5 min typical
 # Terminal load states; everything else is in-progress.
@@ -284,16 +297,71 @@ async def _neptune_wait_for_load(host: str, load_id: str) -> None:
         await asyncio.sleep(NEPTUNE_LOAD_POLL_INTERVAL_SEC)
 
 
+def _stream_csv_projection(
+    url: str, fields: tuple[str, ...]
+) -> Iterator[dict[str, str]]:
+    """Stream a public S3 CSV → yield dicts limited to the named fields.
+
+    Streaming avoids materializing the full 113MB vertices.csv (most of
+    which is the name_embedding column we don't need for AOSS).
+    """
+    with urllib.request.urlopen(url) as resp:  # nosec B310  # noqa: S310
+        text = io.TextIOWrapper(resp, encoding="utf-8")
+        reader = csv.DictReader(text)
+        for row in reader:
+            yield {f: row[f] for f in fields if row.get(f)}
+
+
+async def _populate_aoss_indexes() -> None:
+    """Create AOSS indexes + bulk-load from the same CSVs Neptune loaded.
+
+    graphiti's NeptuneDriver expects 4 AOSS indexes; for our use case
+    (rag-search-style queries against the seed corpus) only the node and
+    edge indexes carry queryable data — community + episode indexes are
+    populated via runtime add_episode calls. Pre-creating empty indexes
+    for those keeps graphiti's check happy without us writing dummy data.
+    """
+    from graphiti_core.driver.neptune_driver import NeptuneDriver
+
+    neptune_host = os.environ["NEPTUNE_HOST"]
+    aoss_host = os.environ["AOSS_HOST"].removeprefix("https://").removeprefix("http://")
+    driver = NeptuneDriver(
+        host=f"neptune-db://{neptune_host}",
+        aoss_host=aoss_host,
+    )
+    # Build all 4 indexes (create_index is idempotent at the API layer)
+    await driver.build_indices_and_constraints(delete_existing=False)
+
+    nodes = list(
+        _stream_csv_projection(
+            f"{NEPTUNE_S3_HTTPS_BASE}vertices.csv", _NODE_AOSS_FIELDS
+        )
+    )
+    logger.info("populating AOSS node_name_and_summary (%d docs)", len(nodes))
+    driver.save_to_aoss("node_name_and_summary", nodes)
+
+    edges = list(
+        _stream_csv_projection(f"{NEPTUNE_S3_HTTPS_BASE}edges.csv", _EDGE_AOSS_FIELDS)
+    )
+    logger.info("populating AOSS edge_name_and_fact (%d docs)", len(edges))
+    driver.save_to_aoss("edge_name_and_fact", edges)
+
+
 async def seed_graph_neptune() -> None:
     """Load pre-baked CSVs into Neptune via Bulk Loader if marker absent.
 
-    Reads NEPTUNE_HOST + NEPTUNE_LOADER_ROLE_ARN from env (CFN UserData
-    writes these from SSM Parameter Store). The S3 source prefix is
-    hardcoded — pre-baked artifacts at arcnode-public/seed/graph-neptune/.
+    Reads NEPTUNE_HOST + NEPTUNE_LOADER_ROLE_ARN + AOSS_HOST from env
+    (CFN UserData writes these from SSM Parameter Store). The S3 source
+    prefix is hardcoded — pre-baked artifacts at
+    arcnode-public/seed/graph-neptune-v2/.
 
-    Idempotent via :ArcnodeSeedMarker {slice:'graph'} node in Neptune
-    itself — same pattern as Neo4j. Re-running this fn on a seeded
-    cluster is a no-op (one openCypher check + return).
+    Two-phase: (1) Neptune Bulk Loader for the graph itself, (2)
+    opensearch bulk for graphiti's AOSS lucene indexes (without these
+    graphiti.search 404s with index_not_found). Both phases drive off
+    the same CSV data.
+
+    Idempotent via :ArcnodeSeedMarker {slice:'graph'} node in Neptune.
+    Re-running on a seeded cluster is a no-op (one openCypher check).
     """
     host = os.environ["NEPTUNE_HOST"]
     loader_role_arn = os.environ["NEPTUNE_LOADER_ROLE_ARN"]
@@ -308,6 +376,7 @@ async def seed_graph_neptune() -> None:
     )
     load_id = await _neptune_start_load(host, loader_role_arn)
     await _neptune_wait_for_load(host, load_id)
+    await _populate_aoss_indexes()
     await _neptune_write_marker(host)
     logger.info("graph (neptune) slice seeded")
 
