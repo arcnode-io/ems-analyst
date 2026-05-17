@@ -12,11 +12,17 @@ from graphiti_core.driver.neptune_driver import NeptuneDriver
 from graphiti_core.driver.search_interface.search_interface import SearchInterface
 from graphiti_core.edges import EntityEdge
 
+from ..config import BedrockSettings, OllamaSettings, ProviderSettings, load_config
 from ..models import EntityMetadata, SearchResult
 from .graphiti_bedrock import (
     BedrockCrossEncoderClient,
     BedrockEmbedderClient,
     BedrockLLMClient,
+)
+from .graphiti_ollama import (
+    OllamaEmbedderClient,
+    make_ollama_llm,
+    make_ollama_reranker,
 )
 
 log = logging.getLogger(__name__)
@@ -75,7 +81,19 @@ class GraphitiClient:
             # so we strip user:pass out of GRAPH_URL and hand them to Graphiti
             # via the dedicated kwargs.
             uri, user, password = _split_neo4j_url(graph_url)
-            return cls(Graphiti(uri=uri, user=user, password=password))
+            embedder, llm_client, cross_encoder = _build_graphiti_clients(
+                load_config().settings
+            )
+            return cls(
+                Graphiti(
+                    uri=uri,
+                    user=user,
+                    password=password,
+                    embedder=embedder,
+                    llm_client=llm_client,
+                    cross_encoder=cross_encoder,
+                )
+            )
 
         neptune_host = os.environ.get("NEPTUNE_HOST")
         aoss_host = os.environ.get("AOSS_HOST")
@@ -146,6 +164,35 @@ class GraphitiClient:
         """Close the Graphiti client connection."""
         if hasattr(self.graphiti, "close") and callable(self.graphiti.close):
             await self.graphiti.close()  # type: ignore[no-untyped-call]
+
+
+def _build_graphiti_clients(
+    settings: ProviderSettings,
+) -> tuple[object, object, object]:
+    """Return (embedder, llm_client, cross_encoder) for the active provider.
+
+    Reason: graphiti defaults to OpenAI when these kwargs are absent, which
+    breaks airgapped + portal-self-serve deployments per ADR-024. Dispatch
+    on the ProviderSettings discriminator so local/airgapped → Ollama and
+    cloud commercial/beta → Bedrock.
+    """
+    if isinstance(settings, BedrockSettings):
+        llm = BedrockLLMClient()
+        return (
+            BedrockEmbedderClient(),
+            llm,
+            BedrockCrossEncoderClient(llm=llm),
+        )
+    if isinstance(settings, OllamaSettings):
+        return (
+            OllamaEmbedderClient(
+                base_url=settings.ollama_base_url,
+                model=settings.ollama_embedding_model,
+            ),
+            make_ollama_llm(settings.ollama_base_url, settings.ollama_chat_model),
+            make_ollama_reranker(settings.ollama_base_url, settings.ollama_chat_model),
+        )
+    raise TypeError(f"unknown ProviderSettings type: {type(settings).__name__}")
 
 
 def _split_neo4j_url(url: str) -> tuple[str, Optional[str], Optional[str]]:

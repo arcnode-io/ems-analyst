@@ -23,12 +23,15 @@ class TestFromEnvFactory:
             # Act
             client = GraphitiClient.from_env()
 
-            # Assert
-            mock_graphiti_class.assert_called_once_with(
-                uri="neo4j+s://host.example:7687",
-                user="alice",
-                password="s3cret",  # noqa: S106  # nosec B106
-            )
+            # Assert — uri/user/password pinned; provider clients asserted by type
+            mock_graphiti_class.assert_called_once()
+            kwargs = mock_graphiti_class.call_args.kwargs
+            assert kwargs["uri"] == "neo4j+s://host.example:7687"
+            assert kwargs["user"] == "alice"
+            assert kwargs["password"] == "s3cret"
+            assert kwargs["embedder"] is not None
+            assert kwargs["llm_client"] is not None
+            assert kwargs["cross_encoder"] is not None
             assert client.graphiti is mock_graphiti_class.return_value
 
     def test_graph_url_without_creds_passes_none_for_user_password(self) -> None:
@@ -45,9 +48,10 @@ class TestFromEnvFactory:
             GraphitiClient.from_env()
 
             # Assert
-            mock_graphiti_class.assert_called_once_with(
-                uri="bolt://host.example:7687", user=None, password=None
-            )
+            kwargs = mock_graphiti_class.call_args.kwargs
+            assert kwargs["uri"] == "bolt://host.example:7687"
+            assert kwargs["user"] is None
+            assert kwargs["password"] is None
 
     def test_url_encoded_creds_are_unquoted(self) -> None:
         """%-encoded creds in GRAPH_URL get decoded before reaching Neo4j.
@@ -68,11 +72,33 @@ class TestFromEnvFactory:
             GraphitiClient.from_env()
 
             # Assert — Neo4j gets the *decoded* password, not the encoded string
-            mock_graphiti_class.assert_called_once_with(
-                uri="neo4j://host.example:7687",
-                user="alice",
-                password="t!st@x",  # noqa: S106  # nosec B106
-            )
+            kwargs = mock_graphiti_class.call_args.kwargs
+            assert kwargs["uri"] == "neo4j://host.example:7687"
+            assert kwargs["user"] == "alice"
+            assert kwargs["password"] == "t!st@x"
+
+    def test_graph_url_neo4j_branch_wires_provider_clients(self) -> None:
+        """Neo4j branch must pass embedder/llm/cross_encoder so graphiti
+        doesn't default to OpenAI. Local cfg → Ollama clients."""
+        # Arrange — local stage's Ollama settings will load via ENV default
+        env = {"GRAPH_URL": "bolt://host.example:7687"}
+        with (
+            patch.dict("os.environ", env, clear=True),
+            patch(
+                "python_mcp_server.clients.graphiti_client.Graphiti"
+            ) as mock_graphiti_class,
+        ):
+            # Act
+            GraphitiClient.from_env()
+
+            # Assert
+            from .graphiti_ollama import OllamaEmbedderClient
+
+            kwargs = mock_graphiti_class.call_args.kwargs
+            assert isinstance(kwargs["embedder"], OllamaEmbedderClient)
+            # llm_client + cross_encoder are graphiti's OpenAI* pointed at Ollama
+            assert kwargs["llm_client"] is not None
+            assert kwargs["cross_encoder"] is not None
 
     def test_neptune_env_constructs_neptune_backed_client(self) -> None:
         """NEPTUNE_HOST + AOSS_HOST → Graphiti with NeptuneDriver + Bedrock clients.
