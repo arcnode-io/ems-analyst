@@ -1,9 +1,9 @@
-"""Per-stage + per-customer configuration loader.
+"""Per-stage configuration loader.
 
 Mirrors python-mcp-server's discriminated-union shape so the embedder
-provider drives chat + memory together (one llm_provider per customer).
+provider drives chat + memory together (one llm_provider per stage).
 
-cfg.yml shape: cfg[ENV][customers][CUSTOMER_ENV] -> {Bedrock|Ollama}Settings.
+cfg.yml shape: cfg[ENV].settings -> {Bedrock|Ollama}Settings.
 """
 
 import enum
@@ -20,9 +20,8 @@ from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 from python_mcp_server.config import (
     BedrockSettings,
-    CustomerEnv,
-    CustomerSettings,
     OllamaSettings,
+    ProviderSettings,
 )
 
 
@@ -40,7 +39,7 @@ class StageConfig(BaseModel):
 
     log_level: LogLevel
     e2e: bool = False
-    customers: dict[CustomerEnv, CustomerSettings]
+    settings: ProviderSettings
 
 
 class _ConfigMap(BaseModel):
@@ -53,45 +52,29 @@ class Config(BaseModel):
 
     log_level: LogLevel
     e2e: bool = False
-    settings: CustomerSettings
+    settings: ProviderSettings
 
 
 def load_config() -> Config:
-    """Resolve cfg[ENV][customers][CUSTOMER_ENV] -> Config.
-
-    ENV defaults to local; CUSTOMER_ENV defaults to defense.
-    """
+    """Resolve cfg[ENV] -> Config. ENV defaults to local."""
     cfg_path = Path(__file__).parent / "cfg.yml"
     with open(cfg_path) as file:
         config_map = _ConfigMap(**yaml.safe_load(file))
     env = os.environ.get("ENV", "local")
-    customer_env_raw = os.environ.get("CUSTOMER_ENV", "defense")
-    if customer_env_raw not in ("commercial", "defense", "airgapped"):
-        raise ValueError(
-            f"CUSTOMER_ENV must be commercial|defense|airgapped, got {customer_env_raw!r}"
-        )
-    customer_env: CustomerEnv = customer_env_raw  # ty: ignore[invalid-assignment]
     stage = config_map.local if env != "beta" else config_map.beta
-    return Config(
-        log_level=stage.log_level,
-        e2e=stage.e2e,
-        settings=stage.customers[customer_env],
-    )
+    return Config(log_level=stage.log_level, e2e=stage.e2e, settings=stage.settings)
 
 
-def chat_model(settings: CustomerSettings) -> Model:
-    """pydantic-ai Model for the customer's chat provider.
+def chat_model(settings: ProviderSettings) -> Model:
+    """pydantic-ai Model for the provider's chat backend.
 
-    Bedrock customers -> BedrockConverseModel (us.* CRIS prefix mandatory
-    per ADR-024). Ollama customers -> OllamaModel against the configured
-    base URL (works for arcnode dev endpoint + customer-hosted appliance).
+    Bedrock -> BedrockConverseModel (us.* CRIS prefix mandatory per ADR-024).
+    Ollama -> OpenAIChatModel against the Ollama OpenAI-compatible endpoint
+    (same path airgapped customers use against their own appliance).
     """
     if isinstance(settings, BedrockSettings):
         return BedrockConverseModel(settings.bedrock_chat_model_id)
     if isinstance(settings, OllamaSettings):
-        # Ollama exposes an OpenAI-compatible /v1/chat/completions endpoint
-        # so we drive it with OpenAIChatModel + a custom base_url. Same
-        # path airgapped customers use against their own Ollama appliance.
         return OpenAIChatModel(
             settings.ollama_chat_model,
             provider=OpenAIProvider(
