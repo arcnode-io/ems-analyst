@@ -118,3 +118,20 @@ class TestHandleTurn:
         # Act + Assert
         with pytest.raises(SiteIdMismatchError):
             await svc.handle_turn(req)
+
+    @pytest.mark.asyncio
+    async def test_request_site_mismatches_deployment_site(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Arrange — baked deployment is 'site-prod', client sends 'site-other'
+        monkeypatch.setenv("SITE_ID", "site-prod")
+        svc, _, _ = _service_with_fakes()
+        req = AnalystChatRequest(
+            conversation_id="44444444-4444-4444-4444-444444444444",
+            message="x",
+            context=ChatContext(site_id="site-other"),
+        )
+
+        # Act + Assert
+        with pytest.raises(SiteIdMismatchError, match="this deployment"):
+            await svc.handle_turn(req)
