@@ -100,6 +100,47 @@ def render_leaderboard(reports: list[ProviderReport]) -> str:
     return "\n".join(lines)
 
 
+@dataclass
+class McpCaseResult(CaseResult):
+    """CaseResult + count of MCP tool calls the model made."""
+
+    mcp_calls: int = 0
+
+
+def render_mcp_leaderboard(reports: list[ProviderReport]) -> str:
+    """Markdown leaderboard with mcp_calls column for the with-MCP eval."""
+    lines: list[str] = [
+        f"# Analyst with-MCP eval — {datetime.now(UTC).strftime('%Y-%m-%d %H:%MZ')}",
+        "",
+        "_Corpus is **unseeded** in v1 — MCP returns empty results. The "
+        "signal here is whether the model invokes MCP tools when the "
+        "prompt explicitly asks for the knowledge base. Answer-quality "
+        "delta from a seeded corpus is v1.2._",
+        "",
+    ]
+    for rep in reports:
+        lines.append(f"## {rep.provider}")
+        lines.append("")
+        lines.append(
+            "| Case | latency_ms | in_tok | out_tok | mcp_calls | correct | $$_eq |"
+        )
+        lines.append("|---|---:|---:|---:|---:|---:|---:|")
+        lines.extend(
+            f"| {r.case} | {r.latency_ms} | {r.input_tokens} | {r.output_tokens} "
+            f"| {getattr(r, 'mcp_calls', 0)} | {r.correctness:.2f} "
+            f"| ${r.cost_usd:.5f} |"
+            for r in rep.results
+        )
+        lines.append("")
+        lines.append(
+            f"**Totals — avg latency {rep.avg_latency_ms:.0f} ms · "
+            f"correctness {rep.correctness_rate * 100:.0f}% · "
+            f"cost $eq {rep.total_cost_usd:.4f}**"
+        )
+        lines.append("")
+    return "\n".join(lines)
+
+
 def render_cost_projection(bedrock_avg_cost_per_query: float) -> str:
     """Forecast monthly Bedrock burn at 100/500/1000 queries/day."""
     lines = [

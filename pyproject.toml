@@ -35,7 +35,7 @@ dev = [
 ]
 
 [tool.poe.tasks]
-depcheck = "deptry . --per-rule-ignores DEP002=python-mcp-server --per-rule-ignores DEP004=pytest"
+depcheck = "deptry ."
 format = "black ."
 lint = "ruff check"
 typecheck = "ty check"
@@ -49,8 +49,13 @@ integration = "pytest -vv tests/*"
 cover = "pytest -vv --cov=src/ems_analyst_agent"
 test = ["unit", "healthcheck", "integration"]
 eval-live = "python -m ems_analyst_agent.eval"
+eval-mcp = "python -m ems_analyst_agent.eval_mcp"
 review = "claude 'run code-reviewer agent against diff for quality and elegance'"
 commit = "bash -c 'uv run poe checks && uv run poe test && uv run poe review && git add -A && git cz && git push'"
+
+[tool.deptry.per_rule_ignores]
+DEP002 = ["python-mcp-server"]
+DEP004 = ["pytest", "pook"]
 
 [tool.coverage.run]
 omit = ["*/test_*.py", "tests/*", "*/main.py", "*/config.py"]
