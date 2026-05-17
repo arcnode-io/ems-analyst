@@ -27,9 +27,11 @@ from urllib.parse import urlparse
 
 import pook
 from pydantic_ai import Agent as PydanticAgent, Tool
-from pydantic_ai.messages import ModelResponse, ToolCallPart
+from pydantic_ai.messages import ModelResponse
 
 from .eval import EvalCase, _build_model
+from .eval_mcp_cases import MCP_CASES
+from .eval_mcp_scoring import count_mcp_calls, count_mcp_successes, score_case
 from .eval_report import (
     USD_PER_INPUT_TOK,
     USD_PER_OUTPUT_TOK,
@@ -56,66 +58,6 @@ from tests.fixtures.containers import start_neo4j, start_postgres  # noqa: E402
 
 NEO4J_PASSWORD: str = "evalpw"  # noqa: S105 — testcontainer only
 
-# Known non-MCP tool names — anything else came from the MCP server.
-_LOCAL_TOOL_NAMES: frozenset[str] = frozenset(
-    {
-        "get_weather_forecast",
-        "get_market_data",
-        "get_energy_news",
-        "query_timeseries",
-        "query_markets",
-        "list_devices_where",
-        "query_energy_breakdown",
-    }
-)
-
-
-# ── corpus-grounded cases (need MCP to answer well) ───────────────────────
-
-MCP_CASES: list[EvalCase] = [
-    EvalCase(
-        name="modbus_function_code_3",
-        prompt=(
-            "Per the Modbus application protocol spec, what is function "
-            "code 3 used for? Search the knowledge base."
-        ),
-        expect_artifact=None,
-        expect_keyword="holding",
-    ),
-    EvalCase(
-        name="hollifield_hmi_palette",
-        prompt=(
-            "According to Hollifield's HMI design guide, what's the "
-            "recommended baseline palette for normal operations? "
-            "Use the knowledge base."
-        ),
-        expect_artifact=None,
-        expect_keyword="gray",
-    ),
-    EvalCase(
-        name="bess_thermal",
-        prompt=(
-            "What does the BESS book say about thermal runaway "
-            "containment strategies? Search the knowledge base."
-        ),
-        expect_artifact=None,
-        expect_keyword="thermal",
-    ),
-]
-
-
-def _count_mcp_calls(messages: list[ModelResponse]) -> int:
-    """Inspect agent message history for tool calls outside the local set."""
-    n = 0
-    for msg in messages:
-        for part in msg.parts:
-            if (
-                isinstance(part, ToolCallPart)
-                and part.tool_name not in _LOCAL_TOOL_NAMES
-            ):
-                n += 1
-    return n
-
 
 async def _run_one_with_mcp(
     agent: PydanticAgent[object], case: EvalCase
@@ -130,14 +72,11 @@ async def _run_one_with_mcp(
     out = getattr(usage, "output_tokens", 0) or 0
     text = str(result.output).lower()
     artifact_kinds = [a.kind for a in deps.artifacts]
-    msgs = [m for m in result.all_messages() if isinstance(m, ModelResponse)]
-    mcp_n = _count_mcp_calls(msgs)
-
-    correctness = 0.0
-    if case.expect_keyword in text:
-        correctness += 0.5
-    if mcp_n > 0:  # rewarding tool use is the whole point of MCP-mode
-        correctness += 0.5
+    all_msgs = list(result.all_messages())
+    responses = [m for m in all_msgs if isinstance(m, ModelResponse)]
+    mcp_n = count_mcp_calls(responses)
+    mcp_ok = count_mcp_successes(all_msgs)
+    correctness = score_case(mcp_ok=mcp_ok, keyword_in_text=case.expect_keyword in text)
 
     cost = inp * USD_PER_INPUT_TOK + out * USD_PER_OUTPUT_TOK
     return McpCaseResult(
@@ -149,6 +88,7 @@ async def _run_one_with_mcp(
         correctness=correctness,
         cost_usd=cost,
         mcp_calls=mcp_n,
+        mcp_successes=mcp_ok,
     )
 
 

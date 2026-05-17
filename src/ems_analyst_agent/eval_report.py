@@ -102,33 +102,45 @@ def render_leaderboard(reports: list[ProviderReport]) -> str:
 
 @dataclass
 class McpCaseResult(CaseResult):
-    """CaseResult + count of MCP tool calls the model made."""
+    """CaseResult + MCP call/return counters."""
 
     mcp_calls: int = 0
+    mcp_successes: int = 0
 
 
 def render_mcp_leaderboard(reports: list[ProviderReport]) -> str:
-    """Markdown leaderboard with mcp_calls column for the with-MCP eval."""
+    """Markdown leaderboard with mcp_calls/mcp_ok columns.
+
+    Scoring rubric (per case):
+    - 1.00: MCP returned non-empty content AND expected keyword appeared
+    - 0.50: only one of the two conditions met
+    - 0.25: keyword present but MCP returned nothing (training-data leak)
+    - 0.00: both missed
+
+    mcp_calls = LLM attempts. mcp_ok = returns with outcome=success and
+    non-empty content. Diverging columns flag a broken backend even when
+    the LLM tries.
+    """
     lines: list[str] = [
         f"# Analyst with-MCP eval — {datetime.now(UTC).strftime('%Y-%m-%d %H:%MZ')}",
         "",
-        "_Corpus is **unseeded** in v1 — MCP returns empty results. The "
-        "signal here is whether the model invokes MCP tools when the "
-        "prompt explicitly asks for the knowledge base. Answer-quality "
-        "delta from a seeded corpus is v1.2._",
+        "_Adversarial scoring: full credit requires both a successful MCP "
+        "return (non-empty, outcome=success) AND a corpus-grounded keyword "
+        "in the answer. Cases are picked so the LLM can't fabricate the "
+        "keyword from training (specific numeric values, exact URI paths)._",
         "",
     ]
     for rep in reports:
         lines.append(f"## {rep.provider}")
         lines.append("")
         lines.append(
-            "| Case | latency_ms | in_tok | out_tok | mcp_calls | correct | $$_eq |"
+            "| Case | latency_ms | in_tok | out_tok | mcp_calls | mcp_ok | correct | $$_eq |"
         )
-        lines.append("|---|---:|---:|---:|---:|---:|---:|")
+        lines.append("|---|---:|---:|---:|---:|---:|---:|---:|")
         lines.extend(
             f"| {r.case} | {r.latency_ms} | {r.input_tokens} | {r.output_tokens} "
-            f"| {getattr(r, 'mcp_calls', 0)} | {r.correctness:.2f} "
-            f"| ${r.cost_usd:.5f} |"
+            f"| {getattr(r, 'mcp_calls', 0)} | {getattr(r, 'mcp_successes', 0)} "
+            f"| {r.correctness:.2f} | ${r.cost_usd:.5f} |"
             for r in rep.results
         )
         lines.append("")
