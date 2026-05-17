@@ -14,9 +14,22 @@ from python_mcp_server.clients import make_embedder
 from .config import chat_model, load_config
 from .memory import MemoryService
 from .prompts import load_system_prompt
+from .schemas import AnalystArtifact, AnalystMessage
 from .tools.domain_mcp import create_mcp_server
 from .tools.markets import get_market_data
+from .tools.telemetry import (
+    list_devices_where,
+    query_energy_breakdown,
+    query_markets,
+    query_timeseries,
+)
 from .tools.weather_api import get_weather_forecast
+
+# Constructor-time guard so we never accidentally register a mutating
+# tool on the analyst — frontend handoff Q2 (read-only by design).
+_FORBIDDEN_VERB_PREFIXES: tuple[str, ...] = (
+    "set_", "dispatch_", "command_", "write_", "delete_", "create_", "update_",
+)
 
 
 class AgentDeps:
@@ -27,8 +40,11 @@ class AgentDeps:
 
         Backend URLs (graph + vector) are read from process env at the
         client layer — MemoryService takes VECTOR_URL at construction.
+        `artifacts` is mutated by telemetry tools; HTTP layer assembles
+        the final AnalystMessage from prose + this list.
         """
         self.memory_service = memory_service
+        self.artifacts: list[AnalystArtifact] = []
 
 
 class Agent:
@@ -53,13 +69,21 @@ class Agent:
         # populates these via env_file; tests set them before constructing Agent.
         mcp_server = create_mcp_server()
 
+        tools = [
+            Tool(get_weather_forecast),
+            Tool(get_market_data),
+            Tool(query_timeseries),
+            Tool(query_markets),
+            Tool(list_devices_where),
+            Tool(query_energy_breakdown),
+        ]
+        _assert_read_only(tools)
+
         # Create Pydantic AI agent with dependency injection.
         self.agent: PydanticAgent[AgentDeps] = PydanticAgent(
             chat_model(config.settings),
             deps_type=AgentDeps,
-            # Tool() wrapper required for plain (non-RunContext) callables — pydantic-ai's
-            # tools= type expects Tool[T] | (RunContext[T], ...) -> Any
-            tools=[Tool(get_weather_forecast), Tool(get_market_data)],
+            tools=tools,
             toolsets=[mcp_server],
             system_prompt=load_system_prompt(),
         )
@@ -95,10 +119,45 @@ class Agent:
         return asyncio.run(self.chat_async(prompt))
 
     async def chat_async(self, prompt: str) -> str:
-        """Async chat — safe to await from FastAPI handlers + async tests."""
+        """Async chat — returns prose only. For artifact-aware chat use chat_message."""
+        msg = await self.chat_message(prompt)
+        return _first_text(msg)
+
+    async def chat_message(self, prompt: str) -> AnalystMessage:
+        """Run the agent and return a full AnalystMessage (text + artifacts).
+
+        HMI's `POST /analyst/chat` consumes this verbatim.
+        """
         deps = AgentDeps(memory_service=self.memory_service)
         result = await self.agent.run(prompt, deps=deps)
         # Store the user prompt for semantic memory across conversations.
         embedding = await self.memory_service.generate_embedding(prompt)
         await self.memory_service.store_memory(f"User stated: {prompt}", embedding)
-        return str(result.output)
+        content: list[dict[str, object]] = [
+            {"type": "text", "text": str(result.output)}
+        ]
+        for art in deps.artifacts:
+            content.append({"type": "artifact", "artifact": art.model_dump(by_alias=True)})
+        return AnalystMessage.model_validate({"role": "assistant", "content": content})
+
+
+def _assert_read_only(tools: list[Tool[AgentDeps]]) -> None:
+    """Fail fast at Agent construction if a mutating-named tool sneaks in."""
+    for tool in tools:
+        # pydantic-ai Tool exposes the function via .function
+        name = getattr(tool.function, "__name__", "")
+        for prefix in _FORBIDDEN_VERB_PREFIXES:
+            if name.startswith(prefix):
+                raise ValueError(
+                    f"Analyst agent is read-only; tool {name!r} starts with "
+                    f"a mutating prefix ({prefix!r}). See HMI handoff Q2."
+                )
+
+
+def _first_text(msg: AnalystMessage) -> str:
+    """Concatenate text content; used by the legacy str-returning chat()."""
+    parts: list[str] = []
+    for entry in msg.content:
+        if entry.type == "text":
+            parts.append(entry.text)
+    return "\n".join(parts)
