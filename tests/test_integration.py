@@ -171,6 +171,19 @@ def test_containers() -> Generator[tuple[str, str]]:
         yield neo4j.url, postgres.url
 
 
+@pytest.fixture(autouse=True)
+def _telemetry_env(test_containers: tuple[str, str]) -> None:
+    """Point TimeseriesClient at the pgvector container (vanilla Postgres).
+
+    The conversation memory + measurements tables can coexist in one DB
+    — different table names, same connection. SITE_ID is a per-deployment
+    string baked at CFN time; tests pin a fixed value.
+    """
+    _, pg_url = test_containers
+    os.environ["TIMESERIES_URL"] = pg_url
+    os.environ["SITE_ID"] = "test-site"
+
+
 class TestIntegration:
     """Integration tests for the application."""
 

@@ -17,9 +17,10 @@ from .config import chat_model, load_config
 from .memory import MemoryService
 from .prompts import load_system_prompt
 from .schemas import AnalystArtifact, AnalystMessage
+from .timeseries import TimeseriesClient
 from .tools.domain_mcp import create_mcp_server
 from .tools.markets import get_market_data
-from .tools.telemetry import (
+from .tools.telemetry_tools import (
     list_devices_where,
     query_energy_breakdown,
     query_markets,
@@ -57,15 +58,22 @@ class ChatTurnResult:
 class AgentDeps:
     """Dependencies injected into agent tools."""
 
-    def __init__(self, memory_service: MemoryService) -> None:
-        """Initialize deps. memory_service is the only injected dependency.
+    def __init__(
+        self,
+        memory_service: MemoryService,
+        site_id: str,
+        timeseries: TimeseriesClient,
+    ) -> None:
+        """Initialize deps.
 
-        Backend URLs (graph + vector) are read from process env at the
-        client layer — MemoryService takes VECTOR_URL at construction.
         `artifacts` is mutated by telemetry tools; HTTP layer assembles
-        the final AnalystMessage from prose + this list.
+        the final AnalystMessage from prose + this list. `site_id` is
+        baked into the deployment via the SITE_ID env var. `timeseries`
+        is the Postgres-protocol client over public.measurements.
         """
         self.memory_service = memory_service
+        self.site_id = site_id
+        self.timeseries = timeseries
         self.artifacts: list[AnalystArtifact] = []
 
 
@@ -85,6 +93,8 @@ class Agent:
             postgres_url=os.environ["VECTOR_URL"],
             embedder=embedder,
         )
+        self.site_id = os.environ["SITE_ID"]
+        self.timeseries = TimeseriesClient.from_env()
 
         # MCP server reads its graph + vector backends from the parent process env
         # (GRAPH_URL or NEPTUNE_HOST+AOSS_HOST, plus VECTOR_URL). Compose
@@ -178,7 +188,11 @@ class Agent:
         sees tool calls + returns from earlier turns; it persists
         `new_messages` after this call so the next turn can replay.
         """
-        deps = AgentDeps(memory_service=self.memory_service)
+        deps = AgentDeps(
+            memory_service=self.memory_service,
+            site_id=self.site_id,
+            timeseries=self.timeseries,
+        )
         result = await self.agent.run(
             prompt, deps=deps, message_history=message_history
         )

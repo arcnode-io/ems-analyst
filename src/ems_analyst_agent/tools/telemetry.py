@@ -1,21 +1,17 @@
-"""Stub telemetry tools that return render-spec artifacts.
+"""Telemetry builders — Pydantic artifact factories backed by TimeseriesClient.
 
-Synthetic data only — TODO: replace each stub with TimescaleDB historian
-+ device-registry queries once the EMS data layer lands.
+Real builders (`build_timeseries`, `build_device_list`) read public.measurements.
+Stub builders (`build_markets_stub`, `build_energy_breakdown_stub`) return
+clearly-labeled placeholder charts — the derivation pipelines those features
+need don't exist yet (see each stub's docstring for what's missing).
 
-Structure:
-- builders (`build_*`) — pure functions returning AnalystArtifact;
-  unit-tested directly.
-- tools (`query_*`, `list_*`) — thin RunContext-aware wrappers that
-  call the builder, append to ctx.deps.artifacts, and return prose for
-  the LLM. Registered on the Agent.
+RunContext wrappers live in `telemetry_tools.py`.
 """
 
+import re
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Literal
-
-from pydantic_ai import RunContext
 
 from ..schemas import (
     AnalystArtifact,
@@ -24,22 +20,40 @@ from ..schemas import (
     PieSpec,
     TableSpec,
 )
+from ..timeseries import TimeseriesClient
 
-# Synthetic device registry — replace with real device-registry query.
-_KNOWN_DEVICES: frozenset[str] = frozenset(
-    {"BESS-01", "BESS-02", "BESS-03", "COMPUTE-POD-1", "GRID-METER-1"}
-)
+_STUB_NOTE: str = " - PLACEHOLDER (derivation pipeline not yet wired)"
 
 
 @dataclass
-class _ArtifactSink:
-    """Anything with an `artifacts: list[AnalystArtifact]` field works as deps."""
+class _TelemetryDeps:
+    """Structural deps shape — anything carrying these fields works."""
 
     artifacts: list[AnalystArtifact] = field(default_factory=list)
+    site_id: str = ""
+    timeseries: object | None = None
 
 
 def _now() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _parse_window(window: str) -> timedelta:
+    """Parse ISO-8601 duration (PT24H) or shorthand (24h, 7d) -> timedelta."""
+    s = window.strip().lower()
+    iso = re.match(r"^pt(\d+)([hm])$", s)
+    if iso:
+        n, unit = int(iso.group(1)), iso.group(2)
+        return timedelta(hours=n) if unit == "h" else timedelta(minutes=n)
+    short = re.match(r"^(\d+)([hdm])$", s)
+    if short:
+        n, unit = int(short.group(1)), short.group(2)
+        if unit == "h":
+            return timedelta(hours=n)
+        if unit == "d":
+            return timedelta(days=n)
+        return timedelta(minutes=n)
+    return timedelta(hours=24)
 
 
 def _error_artifact(code: str, message: str) -> AnalystArtifact:
@@ -51,30 +65,33 @@ def _error_artifact(code: str, message: str) -> AnalystArtifact:
     )
 
 
-# ── builders (pure) ────────────────────────────────────────────────────────
-
-
-def build_timeseries(
+async def build_timeseries(
+    client: TimeseriesClient,
+    site_id: str,
     device_id: str,
     measurement: str,
-    window: str = "PT24H",
-    aggregation: Literal["mean", "max", "min", "last"] = "mean",
+    window: timedelta,
+    aggregation: Literal["mean", "max", "min", "last"],
 ) -> AnalystArtifact:
-    """Build a LineSpec artifact for device.measurement over window (STUB)."""
-    if device_id not in _KNOWN_DEVICES:
+    """Hourly-bucketed timeseries from public.measurements; empty -> error."""
+    rows = await client.query_hourly(
+        site_id=site_id,
+        device_id=device_id,
+        measurement=measurement,
+        window=window,
+        aggregation=aggregation,
+    )
+    if not rows:
         return _error_artifact(
-            "not_found", f"Device '{device_id}' not found in registry."
+            "not_found",
+            f"No {measurement} data for {device_id} over the last {window}.",
         )
-    # TODO: replace with historian.query(device_id, measurement, window, ...)
-    points = [
-        {"x": f"2026-05-16T{hr:02d}:00:00Z", "y": 80.0 - hr * 1.5}
-        for hr in range(0, 24)
-    ]
+    points = [{"x": ts.isoformat().replace("+00:00", "Z"), "y": y} for ts, y in rows]
     spec = LineSpec.model_validate(
         {
-            "title": f"{device_id} {measurement} ({window}, {aggregation})",
+            "title": f"{device_id} {measurement} ({aggregation}, last {window})",
             "xAxis": {"label": "Time", "kind": "time"},
-            "yAxis": {"label": measurement, "unit": "%"},
+            "yAxis": {"label": measurement, "unit": ""},
             "series": [{"label": device_id, "points": points}],
             "dataAsOf": _now(),
         }
@@ -84,32 +101,21 @@ def build_timeseries(
     )
 
 
-def build_device_list(
+async def build_device_list(
+    client: TimeseriesClient,
+    site_id: str,
     status: list[str] | None = None,
-    template: str | None = None,
 ) -> AnalystArtifact:
-    """Build a TableSpec artifact for devices matching status filter (STUB)."""
-    # TODO: replace with device_registry.query(template, status, measurement_filter)
-    rows: list[dict[str, str | float | None]] = [
-        {"device": "BESS-01", "template": "bess_rack", "status": "alarm", "soc": 12.3},
-        {"device": "BESS-02", "template": "bess_rack", "status": "ok", "soc": 78.1},
-        {"device": "BESS-03", "template": "bess_rack", "status": "warn", "soc": 22.0},
-    ]
-    if status:
-        rows = [r for r in rows if r["status"] in status]
-    if template:
-        rows = [r for r in rows if r["template"] == template]
+    """Distinct device_id at the site, with latest 'status' measurement."""
+    rows = await client.list_devices(site_id=site_id, status=status)
     spec = TableSpec.model_validate(
         {
             "title": (
-                f"Device list ({template or 'any'} / "
-                f"{','.join(status) if status else 'any'})"
+                f"Devices at site (status={','.join(status) if status else 'any'})"
             ),
             "columns": [
                 {"key": "device", "label": "Device"},
-                {"key": "template", "label": "Template"},
                 {"key": "status", "label": "Status"},
-                {"key": "soc", "label": "SoC", "align": "right", "unit": "%"},
             ],
             "rows": rows,
             "rowSeverity": [
@@ -124,18 +130,25 @@ def build_device_list(
     )
 
 
-def build_markets(
+def build_markets_stub(
     window: str = "today",
     group_by: Literal["market", "hour"] = "market",
 ) -> AnalystArtifact:
-    """Build a BarSpec artifact for revenue by market (STUB)."""
-    # TODO: replace with revenue_service.query(window, group_by)
+    """STUB. Site revenue by market = sum(site_dispatch * clearing_price).
+
+    Requires: site dispatch published per market product per interval +
+    market clearing price feed (gridstatus.io has it) + revenue
+    derivation service. ~2-4 weeks of work.
+
+    Returns labeled placeholder so the chart renders and the LLM
+    conveys uncertainty rather than presenting fake values as fact.
+    """
     spec = BarSpec.model_validate(
         {
-            "title": f"Revenue by {group_by} ({window})",
+            "title": f"Revenue by {group_by} ({window}){_STUB_NOTE}",
             "xAxis": {"label": "Market", "categories": ["DAM", "RTM", "FREQ"]},
             "yAxis": {"label": "Revenue", "unit": "USD"},
-            "series": [{"label": "site_1", "values": [12340.5, 6789.1, 2341.7]}],
+            "series": [{"label": "placeholder", "values": [0.0, 0.0, 0.0]}],
             "dataAsOf": _now(),
         }
     )
@@ -144,86 +157,27 @@ def build_markets(
     )
 
 
-def build_energy_breakdown(
+def build_energy_breakdown_stub(
     window: str = "today",
     by: Literal["source", "destination"] = "source",
 ) -> AnalystArtifact:
-    """Build a PieSpec artifact for energy mix breakdown (STUB)."""
-    # TODO: replace with energy_service.breakdown(window, by)
+    """STUB. Per-source energy = integrate(source_power_kw dt) over window.
+
+    Requires: per-source meter measurements named in a registry (e.g.
+    solar_inverter_p_kw, grid_meter_p_kw) + trapezoidal integration
+    over interval. ~1 week of work.
+
+    Returns labeled placeholder so the chart renders and the LLM
+    conveys uncertainty rather than presenting fake values as fact.
+    """
     spec = PieSpec.model_validate(
         {
-            "title": f"Energy by {by} ({window})",
+            "title": f"Energy by {by} ({window}){_STUB_NOTE}",
             "unit": "MWh",
-            "slices": [
-                {"label": "solar", "value": 120.5},
-                {"label": "wind", "value": 88.2},
-                {"label": "grid_import", "value": 42.1},
-            ],
+            "slices": [{"label": "placeholder", "value": 0.0}],
             "dataAsOf": _now(),
         }
     )
     return AnalystArtifact.model_validate(
         {"kind": "pie", "spec": spec.model_dump(by_alias=True)}
     )
-
-
-# ── tools (RunContext-aware wrappers) ──────────────────────────────────────
-
-
-async def query_timeseries(
-    ctx: RunContext[_ArtifactSink],
-    device_id: str,
-    measurement: str,
-    window: str = "PT24H",
-    aggregation: Literal["mean", "max", "min", "last"] = "mean",
-) -> str:
-    """Read-only timeseries query against the EMS historian (STUB).
-
-    Args:
-        device_id: Device identifier from the registry (e.g. BESS-01).
-        measurement: Measurement name (e.g. state_of_charge, net_power_kw).
-        window: ISO-8601 duration ("PT24H") or named ("1h","24h","7d").
-        aggregation: mean | max | min | last.
-    """
-    art = build_timeseries(device_id, measurement, window, aggregation)
-    ctx.deps.artifacts.append(art)
-    if art.kind == "error":
-        return f"Device '{device_id}' not found."
-    return (
-        f"Queried 24 points of {measurement} on {device_id} "
-        f"over window={window} agg={aggregation}."
-    )
-
-
-async def list_devices_where(
-    ctx: RunContext[_ArtifactSink],
-    template: str | None = None,
-    status: list[str] | None = None,
-) -> str:
-    """Read-only device list filtered by template / status (STUB)."""
-    art = build_device_list(status=status, template=template)
-    ctx.deps.artifacts.append(art)
-    status_str = ",".join(status) if status else "any"
-    return f"Listed devices with template={template or 'any'}, status={status_str}."
-
-
-async def query_markets(
-    ctx: RunContext[_ArtifactSink],
-    window: str = "today",
-    group_by: Literal["market", "hour"] = "market",
-) -> str:
-    """Read-only revenue-by-market query (STUB)."""
-    art = build_markets(window=window, group_by=group_by)
-    ctx.deps.artifacts.append(art)
-    return f"Computed market revenue for window={window}, group_by={group_by}."
-
-
-async def query_energy_breakdown(
-    ctx: RunContext[_ArtifactSink],
-    window: str = "today",
-    by: Literal["source", "destination"] = "source",
-) -> str:
-    """Read-only energy-mix breakdown (STUB)."""
-    art = build_energy_breakdown(window, by)
-    ctx.deps.artifacts.append(art)
-    return f"Computed energy breakdown for window={window} by {by}."

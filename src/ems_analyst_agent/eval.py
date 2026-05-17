@@ -33,8 +33,8 @@ from .eval_report import (
     render_leaderboard,
 )
 from .prompts import load_system_prompt
-from .tools.telemetry import (
-    _ArtifactSink,
+from .tools.telemetry import _TelemetryDeps
+from .tools.telemetry_tools import (
     list_devices_where,
     query_energy_breakdown,
     query_markets,
@@ -111,8 +111,16 @@ def _build_eval_agent(provider: Provider) -> PydanticAgent[object]:
 
 
 async def _run_one(agent: PydanticAgent[object], case: EvalCase) -> CaseResult:
-    """Run a single case against one agent, capture metrics."""
-    deps = _ArtifactSink()
+    """Run a single case against one agent, capture metrics.
+
+    TODO: telemetry tools now need a real TimeseriesClient via deps.
+    Eval cases that hit query_timeseries/list_devices_where will fail
+    on the assert isinstance(client, TimeseriesClient) check until this
+    spins up a postgres testcontainer + seeds the measurements table.
+    Markets + energy_breakdown stubs still work since they don't touch
+    the client. See `tests/test_timeseries.py` for the seed pattern.
+    """
+    deps = _TelemetryDeps()
     t0 = time.perf_counter()
     result = await agent.run(case.prompt, deps=deps)
     elapsed_ms = int((time.perf_counter() - t0) * 1000)

@@ -43,8 +43,8 @@ from .eval_report import (
 )
 from .prompts import load_system_prompt
 from .tools.domain_mcp import create_mcp_server
-from .tools.telemetry import (
-    _ArtifactSink,
+from .tools.telemetry import _TelemetryDeps
+from .tools.telemetry_tools import (
     list_devices_where,
     query_energy_breakdown,
     query_markets,
@@ -62,7 +62,7 @@ NEO4J_PASSWORD: str = "evalpw"  # noqa: S105 — testcontainer only
 async def _run_one_with_mcp(
     agent: PydanticAgent[object], case: EvalCase
 ) -> McpCaseResult:
-    deps = _ArtifactSink()
+    deps = _TelemetryDeps()  # TODO: same caveat as eval._run_one
     t0 = time.perf_counter()
     result = await agent.run(case.prompt, deps=deps)
     elapsed_ms = int((time.perf_counter() - t0) * 1000)
