@@ -27,6 +27,29 @@ class GraphitiClient:
         Prefer GraphitiClient.from_env() — direct construction is for tests.
         """
         self.graphiti = graphiti
+        self._cached_group_ids: list[str] | None = None
+
+    async def _discover_group_ids(self) -> list[str]:
+        """One-time scan of distinct group_ids across vertices, cached on instance.
+
+        Workaround for the graphiti Neptune driver's MissingParameter bug —
+        see search() docstring. Result is cached because the seed is
+        immutable per deployment.
+        """
+        if self._cached_group_ids is not None:
+            return self._cached_group_ids
+        # Use the underlying driver to run a Cypher discovery query.
+        # NeptuneDriver exposes `execute_query` via its client.
+        try:
+            records, _, _ = await self.graphiti.driver.execute_query(
+                "MATCH (n:Entity) RETURN DISTINCT n.group_id AS g"
+            )
+            self._cached_group_ids = [r["g"] for r in records if r.get("g")]
+            log.info("discovered %d distinct group_ids", len(self._cached_group_ids))
+        except Exception:
+            log.exception("failed to discover group_ids; using empty list")
+            self._cached_group_ids = []
+        return self._cached_group_ids
 
     @classmethod
     def from_env(cls) -> "GraphitiClient":
@@ -83,9 +106,18 @@ class GraphitiClient:
 
         Raises the underlying Graphiti error on failure — no silent empty list.
         """
+        # Reason: graphiti's Neptune driver emits
+        # `WHERE e.group_id IN $group_ids` whenever group_ids is non-None,
+        # but a None default + buggy param propagation triggers
+        # MalformedQueryException(MissingParameter) on empty cases. Pass
+        # the actual seeded group_ids so the WHERE matches and Neptune
+        # gets a valid param.
+        group_ids = await self._discover_group_ids()
         try:
             raw_results = await self.graphiti.search(
-                query=query, center_node_uuid=center_node_uuid
+                query=query,
+                center_node_uuid=center_node_uuid,
+                group_ids=group_ids,
             )
         except Exception:
             log.exception("graphiti search failed (query=%r)", query)
