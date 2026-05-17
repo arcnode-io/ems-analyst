@@ -9,6 +9,7 @@ import asyncio
 import os
 
 from pydantic_ai import Agent as PydanticAgent, RunContext, Tool
+from pydantic_ai.messages import ModelMessage
 from python_mcp_server.clients import make_embedder
 
 from .config import chat_model, load_config
@@ -136,13 +137,22 @@ class Agent:
         msg = await self.chat_message(prompt)
         return _first_text(msg)
 
-    async def chat_message(self, prompt: str) -> AnalystMessage:
+    async def chat_message(
+        self,
+        prompt: str,
+        *,
+        message_history: list[ModelMessage] | None = None,
+    ) -> AnalystMessage:
         """Run the agent and return a full AnalystMessage (text + artifacts).
 
-        HMI's `POST /analyst/chat` consumes this verbatim.
+        HMI's `POST /analyst/chat` consumes this verbatim. When the upstream
+        server holds a multi-turn conversation, it pre-loads prior turns via
+        `message_history` so the LLM sees the full thread (tool calls + all).
         """
         deps = AgentDeps(memory_service=self.memory_service)
-        result = await self.agent.run(prompt, deps=deps)
+        result = await self.agent.run(
+            prompt, deps=deps, message_history=message_history
+        )
         # Store the user prompt for semantic memory across conversations.
         embedding = await self.memory_service.generate_embedding(prompt)
         await self.memory_service.store_memory(f"User stated: {prompt}", embedding)
