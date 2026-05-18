@@ -1,11 +1,11 @@
 """Integration tests for MeasurementsService against a real Postgres.
 
 The agent + HMI both consume measurements via server's REST endpoints
-(principle: agent is just another client of server). This file proves
-the service correctly reads the canonical `measurements` table shape
-that platform-api's telemetry_writer produces.
+(principle: agent is just another client of server). Service serves
+hourly-bucketed, gap-filled timeseries per (site, device, measurement)
+— same shape the agent's old TimeseriesClient.query_hourly returned.
 
-Schema (matches the agent-side TimeseriesClient docstring):
+Schema:
   measurements(ts timestamptz, site_id text, device_id text,
                measurement text, unit text, value jsonb)
 """
@@ -39,7 +39,7 @@ async def measurements_service(postgres_url: str) -> MeasurementsService:
 
 
 async def _seed_measurements_table(postgres_url: str) -> None:
-    """Create the canonical measurements table + a deterministic test row."""
+    """Create the canonical measurements table."""
     conn = await asyncpg.connect(postgres_url)
     try:
         await conn.execute("""
@@ -60,10 +60,10 @@ async def _insert_measurement(
     postgres_url: str,
     ts: datetime,
     site_id: str,
+    device_id: str,
     measurement: str,
     unit: str,
     value: float,
-    device_id: str = "device-1",
 ) -> None:
     conn = await asyncpg.connect(postgres_url)
     try:
@@ -83,55 +83,63 @@ async def _insert_measurement(
 
 
 class TestMeasurementsService:
-    """AAA — service reads canonical measurements rows in a time window."""
+    """AAA — hourly-bucketed, gap-filled timeseries per (site, device, measurement)."""
 
     @pytest.mark.asyncio
-    async def test_get_returns_seeded_point(
+    async def test_get_returns_bucketed_value_for_seeded_hour(
         self, postgres_url: str, measurements_service: MeasurementsService
     ) -> None:
-        # Arrange
+        # Arrange — seed one point at the top of an hour, request a 2-hour window
         await _seed_measurements_table(postgres_url)
-        ts = datetime.now(UTC).replace(microsecond=0)
+        bucket_ts = datetime.now(UTC).replace(minute=15, second=0, microsecond=0)
         await _insert_measurement(
             postgres_url,
-            ts=ts,
+            ts=bucket_ts,
             site_id="site-A",
+            device_id="device-1",
             measurement="power_kw",
             unit="kw",
             value=42.5,
         )
 
-        # Act
+        # Act — bucket=1h, agg=mean, window covers the seeded hour
         actual = await measurements_service.get(
             site_id="site-A",
+            device_id="device-1",
             measurement="power_kw",
-            start=ts - timedelta(hours=1),
-            end=ts + timedelta(hours=1),
+            start=bucket_ts.replace(minute=0),
+            end=bucket_ts.replace(minute=0) + timedelta(hours=2),
+            aggregation="mean",
         )
 
-        # Assert
+        # Assert — value bucketed under the hour, unit echoed
         assert actual.site_id == "site-A"
+        assert actual.device_id == "device-1"
         assert actual.measurement == "power_kw"
         assert actual.unit == "kw"
-        assert len(actual.points) == 1
-        assert actual.points[0].ts == ts
-        assert actual.points[0].value == 42.5
+        seeded_hour = bucket_ts.replace(minute=0)
+        # at least one point matching the seeded hour with our value
+        matching = [p for p in actual.points if p.ts == seeded_hour and p.value == 42.5]
+        assert len(matching) == 1
 
     @pytest.mark.asyncio
-    async def test_get_returns_empty_when_window_excludes_row(
-        self,
-        measurements_service: MeasurementsService,
+    async def test_get_returns_none_value_for_missing_buckets(
+        self, measurements_service: MeasurementsService
     ) -> None:
-        # Arrange — seeded row exists from prior test; query a window far in past
+        # Arrange — window includes hours with no data → those buckets should
+        # come back with value=None (gap-filled, not omitted).
         far_past = datetime(1999, 1, 1, tzinfo=UTC)
 
         # Act
         actual = await measurements_service.get(
             site_id="site-A",
+            device_id="device-1",
             measurement="power_kw",
             start=far_past,
-            end=far_past + timedelta(hours=1),
+            end=far_past + timedelta(hours=3),
+            aggregation="mean",
         )
 
-        # Assert
-        assert actual.points == []
+        # Assert — every bucket present, every value None
+        assert len(actual.points) >= 3
+        assert all(p.value is None for p in actual.points)

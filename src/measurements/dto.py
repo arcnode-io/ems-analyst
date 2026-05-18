@@ -1,26 +1,29 @@
 """DTOs for /sites/{id}/measurements responses.
 
-Shape matches the agent's expected return so the agent's REST tool can
-deserialize directly. Plain (ts, value) points under a measurement
-envelope carrying site_id + unit metadata.
+Hourly-bucketed gap-filled series per (site, device, measurement).
+Missing buckets surface as value=None so chart renderers can draw gaps.
 """
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel
 
+Aggregation = Literal["mean", "max", "min", "last"]
+
 
 class MeasurementPoint(BaseModel):
-    """One (ts, value) reading."""
+    """One bucketed point — value=None for empty buckets."""
 
     ts: datetime
-    value: float
+    value: float | None
 
 
 class MeasurementSeries(BaseModel):
-    """Response envelope — series of points for one site+measurement."""
+    """Response envelope — bucketed series for one site+device+measurement."""
 
     site_id: str
+    device_id: str
     measurement: str
     unit: str
     points: list[MeasurementPoint]
