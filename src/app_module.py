@@ -11,6 +11,8 @@ from src.app_controller import AppController
 from src.call_api.call_api_module import CallApiModule
 from src.config import LogLevel, load_config
 from src.conversations.conversation_module import ConversationModule
+from src.forecasts.forecasts_module import ForecastsModule
+from src.measurements.measurements_module import MeasurementsModule
 
 log = logging.getLogger(__name__)
 
@@ -40,13 +42,17 @@ class AppModule:
         )
 
     def import_module(self, app: FastAPI) -> None:
-        """Register basic routes (app_controller, call_api, analyst chat)."""
+        """Register routes — health, call_api, chat, measurements, forecast."""
         app_controller = AppController()
         call_api = CallApiModule()
         conversation = ConversationModule()
+        measurements = MeasurementsModule()
+        forecasts = ForecastsModule()
         app.include_router(app_controller.router)
         app.include_router(call_api.router)
         app.include_router(conversation.router)
+        app.include_router(measurements.router)
+        app.include_router(forecasts.router)
 
     def create_app(self) -> FastAPI:
         """Create and configure the basic FastAPI application."""

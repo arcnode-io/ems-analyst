@@ -12,49 +12,27 @@
 
 ## Architecture
 
+**Principle:** the agent is just another client of the server, same as the HMI. Both speak the same REST contracts. Any data path added for the HMI is available to the agent as a tool, and vice versa.
 
 ## API Endpoints
 
-### Historical Data
+### GET `/sites/{site_id}/measurements`
 
-```plantuml
-participant client
-participant server
-database timescaledb
+Query the canonical `measurements` table (populated by platform-api's `telemetry_writer`).
 
-client -> server: GET /historical?start=2024-01-01&end=2024-12-31&metrics=solar_mw
-server -> timescaledb: SELECT * FROM solar_generation WHERE timestamp BETWEEN...
-timescaledb -> server: historical data
-server -> client: JSON response with timeseries data
-```
+Params: `measurement` (str), `start` (ISO-8601), `end` (ISO-8601).
+Response: `{ site_id, measurement, unit, points: [{ ts, value }] }`.
 
-### Predictions
+### GET `/sites/{site_id}/forecast`
 
-```plantuml
-participant client
-participant server
-database mlflow
+Query the `forecasts` table (populated by `ems-analyst-model`'s scoring step).
 
-client -> server: POST /predictions {"horizon": "24h", "features": {...}}
-server -> mlflow: load latest solar forecast model
-mlflow -> server: model artifacts
-server -> server: generate predictions
-server -> client: JSON response with forecast data
-```
+Params: `measurement` (str), `start` (ISO-8601), `end` (ISO-8601).
+Response: `{ site_id, measurement, unit, model_name, model_version, points: [{ forecast_for, value }] }`.
 
-### Chat Completions
+### POST `/analyst/chat`
 
-```plantuml
-participant client
-participant server
-participant agent
-
-client -> server: POST /chat {"message": "What's the solar forecast?", "session_id": "123"}
-server -> agent: chat_completion(message, session_id)
-agent -> agent: RAG + knowledge graph + external APIs
-agent -> server: AI response
-server -> client: JSON response with chat completion
-```
+Multi-turn analyst chat. Delegates to `ems_analyst_agent.Agent.chat_turn`; persists thread in Postgres. See HMI handoff for body shape.
 
 ## Project Structure
 ```
