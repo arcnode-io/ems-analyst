@@ -1,9 +1,10 @@
-"""Telemetry builders — Pydantic artifact factories backed by TimeseriesClient.
+"""Telemetry builders — Pydantic artifact factories backed by ServerClient.
 
-Real builders (`build_timeseries`, `build_device_list`) read public.measurements.
-Stub builders (`build_markets_stub`, `build_energy_breakdown_stub`) return
-clearly-labeled placeholder charts — the derivation pipelines those features
-need don't exist yet (see each stub's docstring for what's missing).
+Real builders (`build_timeseries`, `build_device_list`,
+`build_site_description`) read through ems-analyst-server's REST API.
+Stub builders (`build_markets_stub`, `build_energy_breakdown_stub`)
+return clearly-labeled placeholder charts — the derivation pipelines
+those features need don't exist yet.
 
 RunContext wrappers live in `telemetry_tools.py`.
 """
@@ -20,7 +21,7 @@ from ..schemas import (
     PieSpec,
     TableSpec,
 )
-from ..timeseries import TimeseriesClient
+from ..server_client import Aggregation, ServerClient
 
 _STUB_NOTE: str = " - PLACEHOLDER (derivation pipeline not yet wired)"
 
@@ -31,7 +32,7 @@ class _TelemetryDeps:
 
     artifacts: list[AnalystArtifact] = field(default_factory=list)
     site_id: str = ""
-    timeseries: object | None = None
+    server: object | None = None
 
 
 def _now() -> str:
@@ -66,32 +67,40 @@ def _error_artifact(code: str, message: str) -> AnalystArtifact:
 
 
 async def build_timeseries(
-    client: TimeseriesClient,
+    client: ServerClient,
     site_id: str,
     device_id: str,
     measurement: str,
     window: timedelta,
-    aggregation: Literal["mean", "max", "min", "last"],
+    aggregation: Aggregation,
 ) -> AnalystArtifact:
-    """Hourly-bucketed timeseries from public.measurements; empty -> error."""
-    rows = await client.query_hourly(
+    """Bucketed timeseries via server's /measurements; empty → error artifact."""
+    end = datetime.now(UTC)
+    start = end - window
+    series = await client.get_measurements(
         site_id=site_id,
         device_id=device_id,
         measurement=measurement,
-        window=window,
+        start=start,
+        end=end,
         aggregation=aggregation,
     )
-    if not rows:
+    # All-None means the entire window is gap-filled → no data.
+    has_real = any(p.value is not None for p in series.points)
+    if not series.points or not has_real:
         return _error_artifact(
             "not_found",
             f"No {measurement} data for {device_id} over the last {window}.",
         )
-    points = [{"x": ts.isoformat().replace("+00:00", "Z"), "y": y} for ts, y in rows]
+    points = [
+        {"x": p.ts.isoformat().replace("+00:00", "Z"), "y": p.value}
+        for p in series.points
+    ]
     spec = LineSpec.model_validate(
         {
             "title": f"{device_id} {measurement} ({aggregation}, last {window})",
             "xAxis": {"label": "Time", "kind": "time"},
-            "yAxis": {"label": measurement, "unit": ""},
+            "yAxis": {"label": measurement, "unit": series.unit},
             "series": [{"label": device_id, "points": points}],
             "dataAsOf": _now(),
         }
@@ -102,15 +111,23 @@ async def build_timeseries(
 
 
 async def build_site_description(
-    client: TimeseriesClient,
+    client: ServerClient,
     site_id: str,
 ) -> AnalystArtifact:
     """Distinct (device, measurement) pairs at the site — registry as a table."""
-    rows = await client.describe_site(site_id=site_id)
-    if not rows:
+    desc = await client.describe_site(site_id=site_id)
+    if not desc.pairs:
         return _error_artifact(
             "not_found", f"No measurements published for site '{site_id}' yet."
         )
+    rows: list[dict[str, str | int]] = [
+        {
+            "device": p.device_id,
+            "measurement": p.measurement,
+            "samples": p.samples,
+        }
+        for p in desc.pairs
+    ]
     spec = TableSpec.model_validate(
         {
             "title": f"Available data at site '{site_id}'",
@@ -129,12 +146,15 @@ async def build_site_description(
 
 
 async def build_device_list(
-    client: TimeseriesClient,
+    client: ServerClient,
     site_id: str,
     status: list[str] | None = None,
 ) -> AnalystArtifact:
-    """Distinct device_id at the site, with latest 'status' measurement."""
-    rows = await client.list_devices(site_id=site_id, status=status)
+    """Distinct device_ids at the site with their latest status."""
+    devs = await client.list_devices(site_id=site_id, status=status)
+    rows: list[dict[str, str | None]] = [
+        {"device": d.device_id, "status": d.status} for d in devs.devices
+    ]
     spec = TableSpec.model_validate(
         {
             "title": (
@@ -146,8 +166,8 @@ async def build_device_list(
             ],
             "rows": rows,
             "rowSeverity": [
-                r["status"] if r["status"] in ("ok", "warn", "alarm") else None
-                for r in rows
+                d.status if d.status in ("ok", "warn", "alarm") else None
+                for d in devs.devices
             ],
             "dataAsOf": _now(),
         }
@@ -165,10 +185,9 @@ def build_markets_stub(
 
     Requires: site dispatch published per market product per interval +
     market clearing price feed (gridstatus.io has it) + revenue
-    derivation service. ~2-4 weeks of work.
-
-    Returns labeled placeholder so the chart renders and the LLM
-    conveys uncertainty rather than presenting fake values as fact.
+    derivation service. Returns labeled placeholder so the chart renders
+    and the LLM conveys uncertainty rather than presenting fake values
+    as fact.
     """
     spec = BarSpec.model_validate(
         {
@@ -191,11 +210,9 @@ def build_energy_breakdown_stub(
     """STUB. Per-source energy = integrate(source_power_kw dt) over window.
 
     Requires: per-source meter measurements named in a registry (e.g.
-    solar_inverter_p_kw, grid_meter_p_kw) + trapezoidal integration
-    over interval. ~1 week of work.
-
-    Returns labeled placeholder so the chart renders and the LLM
-    conveys uncertainty rather than presenting fake values as fact.
+    solar_inverter_p_kw, grid_meter_p_kw) + trapezoidal integration over
+    interval. Returns labeled placeholder so the chart renders and the
+    LLM conveys uncertainty rather than presenting fake values as fact.
     """
     spec = PieSpec.model_validate(
         {

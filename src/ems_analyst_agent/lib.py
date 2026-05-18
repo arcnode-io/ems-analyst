@@ -17,8 +17,9 @@ from .config import chat_model, load_config
 from .memory import MemoryService
 from .prompts import load_system_prompt
 from .schemas import AnalystArtifact, AnalystMessage
-from .timeseries import TimeseriesClient
+from .server_client import ServerClient
 from .tools.domain_mcp import create_mcp_server
+from .tools.forecast import get_forecast
 from .tools.markets import get_market_data
 from .tools.telemetry_tools import (
     describe_site,
@@ -63,18 +64,20 @@ class AgentDeps:
         self,
         memory_service: MemoryService,
         site_id: str,
-        timeseries: TimeseriesClient,
+        server: ServerClient,
     ) -> None:
         """Initialize deps.
 
         `artifacts` is mutated by telemetry tools; HTTP layer assembles
         the final AnalystMessage from prose + this list. `site_id` is
-        baked into the deployment via the SITE_ID env var. `timeseries`
-        is the Postgres-protocol client over public.measurements.
+        baked into the deployment via the SITE_ID env var. `server` is
+        the REST client over ems-analyst-server — agent reads telemetry
+        + forecasts through it (principle: agent is just another client
+        of server, same as HMI).
         """
         self.memory_service = memory_service
         self.site_id = site_id
-        self.timeseries = timeseries
+        self.server = server
         self.artifacts: list[AnalystArtifact] = []
 
 
@@ -96,7 +99,7 @@ class Agent:
             embedder=embedder,
         )
         self.site_id = os.environ["SITE_ID"]
-        self.timeseries = TimeseriesClient.from_env()
+        self.server = ServerClient()
 
         # MCP server reads its graph + vector backends from the parent process env
         # (GRAPH_URL or NEPTUNE_HOST+AOSS_HOST, plus VECTOR_URL). Compose
@@ -112,6 +115,7 @@ class Agent:
             Tool(get_market_data),
             Tool(describe_site),
             Tool(query_timeseries),
+            Tool(get_forecast),
             Tool(query_markets),
             Tool(list_devices_where),
             Tool(query_energy_breakdown),
@@ -206,7 +210,7 @@ class Agent:
         deps = AgentDeps(
             memory_service=self.memory_service,
             site_id=self.site_id,
-            timeseries=self.timeseries,
+            server=self.server,
         )
         result = await self.agent.run(
             prompt, deps=deps, message_history=message_history

@@ -174,15 +174,15 @@ def test_containers() -> Generator[tuple[str, str]]:
 
 
 @pytest.fixture(autouse=True)
-def _telemetry_env(test_containers: tuple[str, str]) -> None:
-    """Point TimeseriesClient at the pgvector container (vanilla Postgres).
+def _telemetry_env() -> None:
+    """Set env vars Agent() construction reads.
 
-    The conversation memory + measurements tables can coexist in one DB
-    — different table names, same connection. SITE_ID is a per-deployment
-    string baked at CFN time; tests pin a fixed value.
+    These tests exercise MCP / weather / markets / memory paths — none
+    call telemetry tools, so SERVER_URL just needs to be settable for
+    Agent() to construct. SITE_ID is a per-deployment string baked at
+    CFN time; tests pin a fixed value.
     """
-    _, pg_url = test_containers
-    os.environ["TIMESERIES_URL"] = pg_url
+    os.environ["SERVER_URL"] = "http://server-stub.test"
     os.environ["SITE_ID"] = "test-site"
 
 

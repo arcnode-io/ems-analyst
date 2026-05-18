@@ -1,8 +1,9 @@
 """Demo-mode bootstrap — seed public.measurements from bundled CSV.
 
 When ENV=demo, the analyst-server calls seed_measurements() at startup
-so the LLM has real (if synthetic) site data to query via TimeseriesClient.
-Idempotent: skips if the table already has rows.
+so the LLM has real (if synthetic) site data to query — agent reads it
+through server's /sites/{id}/measurements endpoint, same path the HMI
+uses. Idempotent: skips if the table already has rows.
 
 CSV columns: ts, site_id, device_id, measurement, unit, value
 - ts: ISO 8601 UTC ('Z' suffix)

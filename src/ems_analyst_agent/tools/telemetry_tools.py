@@ -8,7 +8,7 @@ from typing import Literal
 
 from pydantic_ai import RunContext
 
-from ..timeseries import TimeseriesClient
+from ..server_client import ServerClient
 from .telemetry import (
     _TelemetryDeps,
     _parse_window,
@@ -27,7 +27,7 @@ async def query_timeseries(
     window: str = "PT24H",
     aggregation: Literal["mean", "max", "min", "last"] = "mean",
 ) -> str:
-    """Read-only timeseries query against public.measurements.
+    """Read-only timeseries query through ems-analyst-server.
 
     Args:
         device_id: Device identifier as published in measurements.device_id.
@@ -36,8 +36,8 @@ async def query_timeseries(
         aggregation: mean | max | min | last (hourly bucket).
     """
     td = _parse_window(window)
-    client = ctx.deps.timeseries
-    assert isinstance(client, TimeseriesClient)
+    client = ctx.deps.server
+    assert isinstance(client, ServerClient)
     art = await build_timeseries(
         client, ctx.deps.site_id, device_id, measurement, td, aggregation
     )
@@ -55,8 +55,8 @@ async def describe_site(ctx: RunContext[_TelemetryDeps]) -> str:
     Avoids the failure mode where the model guesses 'soc' but the data
     publishes as 'state_of_charge'.
     """
-    client = ctx.deps.timeseries
-    assert isinstance(client, TimeseriesClient)
+    client = ctx.deps.server
+    assert isinstance(client, ServerClient)
     art = await build_site_description(client, ctx.deps.site_id)
     ctx.deps.artifacts.append(art)
     return f"Returned device+measurement registry for site '{ctx.deps.site_id}'."
@@ -67,8 +67,8 @@ async def list_devices_where(
     status: list[str] | None = None,
 ) -> str:
     """List devices at the site, optionally filtered by latest status."""
-    client = ctx.deps.timeseries
-    assert isinstance(client, TimeseriesClient)
+    client = ctx.deps.server
+    assert isinstance(client, ServerClient)
     art = await build_device_list(client, ctx.deps.site_id, status=status)
     ctx.deps.artifacts.append(art)
     return f"Listed devices status={','.join(status) if status else 'any'}."

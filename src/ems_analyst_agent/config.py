@@ -30,6 +30,8 @@ class LogLevel(enum.StrEnum):
 
 
 class ErcotSettlementPoint(enum.StrEnum):
+    """ERCOT trading hubs — settlement points the customer can pick."""
+
     HB_NORTH = "HB_NORTH"
     HB_SOUTH = "HB_SOUTH"
     HB_HOUSTON = "HB_HOUSTON"
@@ -39,6 +41,8 @@ class ErcotSettlementPoint(enum.StrEnum):
 
 
 class ErcotMarket(BaseModel):
+    """ERCOT market + settlement-point config block for the deployment."""
+
     wholesale_market: Literal["ercot"]
     settlement_point: ErcotSettlementPoint
 

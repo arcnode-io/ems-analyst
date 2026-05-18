@@ -32,9 +32,8 @@ from .eval_report import (
     render_cost_projection,
     render_leaderboard,
 )
-from .eval_seed import EVAL_SITE_ID, seeded_timeseries_client
+from .eval_seed import EVAL_SITE_ID, EvalServerClient, seeded_server_client
 from .prompts import load_system_prompt
-from .timeseries import TimeseriesClient
 from .tools.telemetry import _TelemetryDeps
 from .tools.telemetry_tools import (
     list_devices_where,
@@ -115,14 +114,14 @@ def _build_eval_agent(provider: Provider) -> PydanticAgent[object]:
 async def _run_one(
     agent: PydanticAgent[object],
     case: EvalCase,
-    timeseries: TimeseriesClient,
+    server: EvalServerClient,
 ) -> CaseResult:
     """Run a single case against one agent, capture metrics.
 
-    `timeseries` is the seeded testcontainer client — telemetry tools
-    need it for query_timeseries / list_devices_where.
+    `server` is the seeded EvalServerClient — telemetry tools call it
+    instead of HTTP since the eval bypasses the FastAPI transport.
     """
-    deps = _TelemetryDeps(site_id=EVAL_SITE_ID, timeseries=timeseries)
+    deps = _TelemetryDeps(site_id=EVAL_SITE_ID, server=server)
     t0 = time.perf_counter()
     result = await agent.run(case.prompt, deps=deps)
     elapsed_ms = int((time.perf_counter() - t0) * 1000)
@@ -151,14 +150,10 @@ async def _run_one(
     )
 
 
-async def run_provider(
-    provider: Provider, timeseries: TimeseriesClient
-) -> ProviderReport:
+async def run_provider(provider: Provider, server: EvalServerClient) -> ProviderReport:
     """Serial pass — never run two cases or two providers concurrently."""
     agent = _build_eval_agent(provider)
-    results: list[CaseResult] = [
-        await _run_one(agent, case, timeseries) for case in CASES
-    ]
+    results: list[CaseResult] = [await _run_one(agent, case, server) for case in CASES]
     return ProviderReport(provider=provider, results=results)
 
 
@@ -168,10 +163,10 @@ async def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(UTC).strftime("%Y-%m-%d")
 
-    async with seeded_timeseries_client() as timeseries:
+    async with seeded_server_client() as server:
         reports = [
-            await run_provider("ollama", timeseries),
-            await run_provider("bedrock", timeseries),
+            await run_provider("ollama", server),
+            await run_provider("bedrock", server),
         ]
 
     (out_dir / f"ems-eval-leaderboard-{stamp}.md").write_text(

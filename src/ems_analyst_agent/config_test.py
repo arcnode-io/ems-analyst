@@ -32,9 +32,7 @@ def test_load_config_customer_merges_market_block(tmp_path: Path) -> None:
     # Arrange
     customer = tmp_path / "cfg.customer.yml"
     customer.write_text(
-        "market:\n"
-        "  wholesale_market: ercot\n"
-        "  settlement_point: HB_HOUSTON\n"
+        "market:\n" "  wholesale_market: ercot\n" "  settlement_point: HB_HOUSTON\n"
     )
     with patch.dict(
         os.environ, {"ENV": "local", "CFG_CUSTOMER_PATH": str(customer)}, clear=False
@@ -53,17 +51,19 @@ def test_load_config_rejects_unknown_settlement_point(tmp_path: Path) -> None:
     # Arrange
     customer = tmp_path / "cfg.customer.yml"
     customer.write_text(
-        "market:\n"
-        "  wholesale_market: ercot\n"
-        "  settlement_point: HB_TYPO\n"
+        "market:\n" "  wholesale_market: ercot\n" "  settlement_point: HB_TYPO\n"
     )
 
     # Act / Assert
-    with patch.dict(
-        os.environ, {"ENV": "local", "CFG_CUSTOMER_PATH": str(customer)}, clear=False
+    with (
+        patch.dict(
+            os.environ,
+            {"ENV": "local", "CFG_CUSTOMER_PATH": str(customer)},
+            clear=False,
+        ),
+        pytest.raises(Exception, match=r"HB_TYPO"),
     ):
-        with pytest.raises(Exception, match=r"HB_TYPO"):
-            load_config()
+        load_config()
 
 
 def test_load_config_ignores_missing_customer_file(tmp_path: Path) -> None:

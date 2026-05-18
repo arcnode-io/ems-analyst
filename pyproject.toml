@@ -53,6 +53,9 @@ eval-mcp = "python -m ems_analyst_agent.eval_mcp"
 review = "claude 'run code-reviewer agent against diff for quality and elegance'"
 commit = "bash -c 'uv run poe checks && uv run poe test && uv run poe review && git add -A && git cz && git push'"
 
+[tool.deptry]
+known_first_party = ["ems_analyst_agent"]
+
 [tool.deptry.per_rule_ignores]
 DEP002 = ["python-mcp-server"]
 DEP004 = ["pytest", "pook"]
