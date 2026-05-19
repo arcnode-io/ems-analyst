@@ -93,12 +93,12 @@ class Agent:
         """
         config = load_config()
         self.market = config.market
+        self.site_id = config.site_id
         embedder = make_embedder(config.settings)
         self.memory_service = MemoryService(
             postgres_url=os.environ["VECTOR_URL"],
             embedder=embedder,
         )
-        self.site_id = os.environ["SITE_ID"]
         self.server = ServerClient()
 
         # MCP server reads its graph + vector backends from the parent process env

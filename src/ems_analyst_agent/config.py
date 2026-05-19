@@ -56,6 +56,7 @@ class StageConfig(BaseModel):
 
     log_level: LogLevel
     e2e: bool = False
+    site_id: str
     settings: ProviderSettings
     market: MarketConfig
 
@@ -71,6 +72,7 @@ class Config(BaseModel):
 
     log_level: LogLevel
     e2e: bool = False
+    site_id: str
     settings: ProviderSettings
     market: MarketConfig
 
@@ -100,6 +102,7 @@ def load_config() -> Config:
     return Config(
         log_level=stage.log_level,
         e2e=stage.e2e,
+        site_id=stage.site_id,
         settings=stage.settings,
         market=stage.market,
     )

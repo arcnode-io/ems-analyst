@@ -1,27 +1,20 @@
 local:
   log_level: DEBUG
   e2e: false
+  site_id: site_001
   settings:
-    # Local dev points at arcnode's beta Ollama for free dogfood —
-    # matches the airgapped customer profile (ADR-024).
     llm_provider: ollama
     ollama_base_url: http://173.211.12.43:11434/v1
     ollama_chat_model: qwen3.6:35b
     ollama_embedding_model: qwen3-embedding:4b
-  # market defaults for dev / tests. Per-deploy override comes from
-  # /app/cfg.local.yml which platform-api UserData writes from the
-  # ConfiguratorPayload at boot time. See config.py loader for the
-  # merge order.
   market:
     wholesale_market: ercot
     settlement_point: HB_NORTH
 
 demo:
-  # Self-hosted demo deployment — same provider as local, but the
-  # ENV=demo trigger tells the server to seed public.measurements
-  # from the bundled CSV on startup (idempotent).
   log_level: INFO
   e2e: false
+  site_id: arcnode_demo
   settings:
     llm_provider: ollama
     ollama_base_url: http://173.211.12.43:11434/v1
@@ -34,15 +27,13 @@ demo:
 beta:
   log_level: INFO
   e2e: false
+  # beta deploys always get a cfg.customer.yml from platform-api UserData
+  # — these are fallback values only; the overlay should always be present.
+  site_id: arcnode_beta
   settings:
     llm_provider: bedrock
-    # CRIS prefix mandatory per ADR-024 — direct anthropic.* IDs need
-    # provisioned throughput.
     bedrock_chat_model_id: us.anthropic.claude-sonnet-4-6
     bedrock_embedding_model_id: amazon.titan-embed-text-v2:0
-  # beta deploys ALWAYS get a /app/cfg.local.yml overlay from UserData
-  # with the customer's actual market. These are fallback values only —
-  # the overlay should always be present in prod.
   market:
     wholesale_market: ercot
     settlement_point: HB_NORTH
