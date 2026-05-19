@@ -70,6 +70,7 @@ class TestHandleTurn:
     async def test_first_turn_creates_conversation(self) -> None:
         # Arrange
         svc, store, agent = _service_with_fakes()
+        svc._baked_site_id = "site-a"  # match request
         req = AnalystChatRequest(
             conversation_id="11111111-1111-1111-1111-111111111111",
             message="hi",
@@ -88,6 +89,7 @@ class TestHandleTurn:
     async def test_subsequent_turn_loads_history(self) -> None:
         # Arrange
         svc, store, agent = _service_with_fakes()
+        svc._baked_site_id = "site-b"  # match request
         cid = "22222222-2222-2222-2222-222222222222"
         store.site_ids[cid] = "site-b"
         store.histories[cid] = ["sentinel1", "sentinel2"]
@@ -120,12 +122,10 @@ class TestHandleTurn:
             await svc.handle_turn(req)
 
     @pytest.mark.asyncio
-    async def test_request_site_mismatches_deployment_site(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_request_site_mismatches_deployment_site(self) -> None:
         # Arrange — baked deployment is 'site-prod', client sends 'site-other'
-        monkeypatch.setenv("SITE_ID", "site-prod")
         svc, _, _ = _service_with_fakes()
+        svc._baked_site_id = "site-prod"  # bypass cfg lookup
         req = AnalystChatRequest(
             conversation_id="44444444-4444-4444-4444-444444444444",
             message="x",

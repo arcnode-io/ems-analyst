@@ -13,7 +13,6 @@ from .dto import AnalystChatRequest
 log = logging.getLogger(__name__)
 
 _VECTOR_URL_ENV: str = "VECTOR_URL"
-_SITE_ID_ENV: str = "SITE_ID"
 
 
 class ConversationService:
@@ -23,6 +22,7 @@ class ConversationService:
         """Lazy singletons — first request spawns the agent + checks the DB."""
         self._agent: Agent | None = None
         self._store: ConversationStore | None = None
+        self._baked_site_id: str | None = None
 
     def _agent_instance(self) -> Agent:
         if self._agent is None:
@@ -33,6 +33,18 @@ class ConversationService:
         if self._store is None:
             self._store = ConversationStore(postgres_url=os.environ[_VECTOR_URL_ENV])
         return self._store
+
+    def _site_id(self) -> str:
+        """Per-deployment site_id baked into ems-analyst-agent's cfg.
+
+        Lazy — load_config() is cheap (one YAML read + pydantic) so we cache
+        for the lifetime of the service.
+        """
+        if self._baked_site_id is None:
+            from ems_analyst_agent.config import load_config
+
+            self._baked_site_id = load_config().site_id
+        return self._baked_site_id
 
     async def handle_turn(self, req: AnalystChatRequest) -> AnalystMessage:
         """Run one turn — load thread, call agent, persist trace.
@@ -49,7 +61,7 @@ class ConversationService:
         """
         store = self._store_instance()
         request_site = req.context.site_id if req.context else None
-        baked_site = os.environ.get(_SITE_ID_ENV)
+        baked_site = self._site_id()
         if request_site is not None and baked_site and request_site != baked_site:
             raise SiteIdMismatchError(
                 f"siteId {request_site!r} does not match this deployment "
