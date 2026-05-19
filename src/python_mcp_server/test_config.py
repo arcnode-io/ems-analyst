@@ -80,10 +80,12 @@ def test_missing_customer_path_falls_back_to_defaults(tmp_path: Path) -> None:
     assert cfg.graph.backend == "neo4j"
 
 
-def test_unknown_stage_raises(tmp_path: Path) -> None:
-    """Loader fails fast when ENV picks a block that doesn't exist."""
+def test_unknown_stage_falls_back_to_local(tmp_path: Path) -> None:
+    """Unknown ENV (e.g. ENV=ci) → local stage so transient envs don't
+    need explicit cfg blocks."""
     # Arrange
     defaults = _write(tmp_path, "cfg.defaults.yml", _DEFAULTS)
-    # Act + Assert
-    with pytest.raises(RuntimeError, match="missing block"):
-        load_config_from(defaults, None, "prod")
+    # Act
+    cfg = load_config_from(defaults, None, "ci")
+    # Assert — got the local stage's graph backend
+    assert cfg.graph.backend == "none"

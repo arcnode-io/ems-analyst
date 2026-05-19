@@ -117,12 +117,16 @@ def load_config() -> Config:
 def load_config_from(
     defaults_path: Path, customer_path: str | None, env_name: str
 ) -> Config:
-    """Pure fn for tests. Deep-merge customer over defaults[env_name]."""
+    """Pure fn for tests. Deep-merge customer over defaults[env_name].
+
+    Unknown ENV (e.g. ENV=ci in pipelines) falls back to the `local`
+    stage so transient envs don't have to be enumerated in cfg.
+    """
     with open(defaults_path) as f:
         all_data: dict[str, Any] = yaml.safe_load(f)
-    stage_data = all_data.get(env_name)
+    stage_data = all_data.get(env_name) or all_data.get("local")
     if stage_data is None:
-        raise RuntimeError(f"cfg.defaults.yml missing block: {env_name}")
+        raise RuntimeError("cfg.defaults.yml missing both block: local")
     if customer_path:
         cp = Path(customer_path)
         if cp.exists():
