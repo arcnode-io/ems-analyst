@@ -2,8 +2,6 @@
 
 from pathlib import Path
 
-import pytest
-
 from .config import NeptuneGraph, NoneGraph, load_config_from
 
 _DEFAULTS = """
