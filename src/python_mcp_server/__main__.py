@@ -37,6 +37,7 @@ async def _seed() -> None:
     await seed_all(
         vector_url=config.settings.vector_seed_url,
         graph_neo4j_url=config.settings.graph_neo4j_seed_url,
+        graph=config.graph,
     )
 
 

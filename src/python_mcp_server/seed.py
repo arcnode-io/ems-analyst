@@ -39,6 +39,7 @@ from botocore.awsrequest import AWSRequest
 from neo4j import AsyncGraphDatabase, AsyncManagedTransaction
 
 from .clients.graphiti_client import _split_neo4j_url
+from .config import Neo4jGraph, NeptuneGraph, NoneGraph
 
 logger = logging.getLogger(__name__)
 
@@ -324,7 +325,7 @@ def _stream_csv_projection(
             yield out
 
 
-async def _populate_aoss_indexes() -> None:
+async def _populate_aoss_indexes(graph: NeptuneGraph) -> None:
     """Create AOSS indexes + bulk-load from the same CSVs Neptune loaded.
 
     graphiti's NeptuneDriver expects 4 AOSS indexes; for our use case
@@ -335,10 +336,9 @@ async def _populate_aoss_indexes() -> None:
     """
     from graphiti_core.driver.neptune_driver import NeptuneDriver
 
-    neptune_host = os.environ["NEPTUNE_HOST"]
-    aoss_host = os.environ["AOSS_HOST"].removeprefix("https://").removeprefix("http://")
+    aoss_host = graph.aoss_host.removeprefix("https://").removeprefix("http://")
     driver = NeptuneDriver(
-        host=f"neptune-db://{neptune_host}",
+        host=f"neptune-db://{graph.neptune_host}",
         aoss_host=aoss_host,
     )
     # Build all 4 indexes (create_index is idempotent at the API layer)
@@ -359,13 +359,12 @@ async def _populate_aoss_indexes() -> None:
     driver.save_to_aoss("edge_name_and_fact", edges)
 
 
-async def seed_graph_neptune() -> None:
+async def seed_graph_neptune(graph: NeptuneGraph) -> None:
     """Load pre-baked CSVs into Neptune via Bulk Loader if marker absent.
 
-    Reads NEPTUNE_HOST + NEPTUNE_LOADER_ROLE_ARN + AOSS_HOST from env
-    (CFN UserData writes these from SSM Parameter Store). The S3 source
-    prefix is hardcoded — pre-baked artifacts at
-    arcnode-public/seed/graph-neptune-v2/.
+    Hosts + IAM role come from cfg.customer.yml (written by CFN UserData
+    from CFN outputs). S3 source prefix is hardcoded — pre-baked artifacts
+    at arcnode-public/seed/graph-neptune-v2/.
 
     Two-phase: (1) Neptune Bulk Loader for the graph itself, (2)
     opensearch bulk for graphiti's AOSS lucene indexes (without these
@@ -375,45 +374,43 @@ async def seed_graph_neptune() -> None:
     Idempotent via :ArcnodeSeedMarker {slice:'graph'} node in Neptune.
     Re-running on a seeded cluster is a no-op (one openCypher check).
     """
-    host = os.environ["NEPTUNE_HOST"]
-    loader_role_arn = os.environ["NEPTUNE_LOADER_ROLE_ARN"]
-
-    if await _neptune_has_marker(host):
+    if await _neptune_has_marker(graph.neptune_host):
         logger.info("graph (neptune) slice already seeded; skipping")
         return
     logger.info(
         "seeding graph (neptune) slice from %s via role %s",
         NEPTUNE_S3_SOURCE,
-        loader_role_arn,
+        graph.loader_role_arn,
     )
-    load_id = await _neptune_start_load(host, loader_role_arn)
-    await _neptune_wait_for_load(host, load_id)
-    await _populate_aoss_indexes()
-    await _neptune_write_marker(host)
+    load_id = await _neptune_start_load(graph.neptune_host, graph.loader_role_arn)
+    await _neptune_wait_for_load(graph.neptune_host, load_id)
+    await _populate_aoss_indexes(graph)
+    await _neptune_write_marker(graph.neptune_host)
     logger.info("graph (neptune) slice seeded")
 
 
-async def seed_all(vector_url: str | None, graph_neo4j_url: str | None) -> None:
-    """Run available seeds at boot. Skips a slice when its env conn is unset.
+async def seed_all(
+    vector_url: str | None,
+    graph_neo4j_url: str | None,
+    graph: NoneGraph | Neo4jGraph | NeptuneGraph,
+) -> None:
+    """Run available seeds at boot. Skips a slice when its conn is unset.
 
-    Graph backend is chosen by env shape:
-      - GRAPH_URL  (Aura / self-hosted Neo4j) → seed_graph_neo4j
-      - NEPTUNE_HOST + NEPTUNE_LOADER_ROLE_ARN (defense) → seed_graph_neptune
-
-    Defense customers should have NEPTUNE_HOST but no GRAPH_URL.
-    Commercial customers have GRAPH_URL but no NEPTUNE_HOST. Airgapped
-    customers have GRAPH_URL pointing at their self-hosted Neo4j.
+    Graph backend comes from cfg.graph:
+      - Neo4jGraph + GRAPH_URL env + graph_neo4j_url → seed_graph_neo4j
+      - NeptuneGraph (hosts + role from cfg) → seed_graph_neptune
+      - NoneGraph → skip
     """
     if vector_url and os.environ.get("VECTOR_URL"):
         await seed_vector(vector_url)
     else:
         logger.info("vector seed skipped (no VECTOR_URL or seed URL)")
-    if graph_neo4j_url and os.environ.get("GRAPH_URL"):
-        await seed_graph_neo4j(graph_neo4j_url)
-    elif os.environ.get("NEPTUNE_HOST") and os.environ.get("NEPTUNE_LOADER_ROLE_ARN"):
-        await seed_graph_neptune()
+    if isinstance(graph, Neo4jGraph):
+        if graph_neo4j_url and os.environ.get("GRAPH_URL"):
+            await seed_graph_neo4j(graph_neo4j_url)
+        else:
+            logger.info("graph seed skipped (no GRAPH_URL or seed URL)")
+    elif isinstance(graph, NeptuneGraph):
+        await seed_graph_neptune(graph)
     else:
-        logger.info(
-            "graph seed skipped (no GRAPH_URL+seed-url, "
-            "no NEPTUNE_HOST+NEPTUNE_LOADER_ROLE_ARN)"
-        )
+        logger.info("graph seed skipped (cfg.graph.backend=none)")

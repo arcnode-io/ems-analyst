@@ -128,6 +128,7 @@ async def test_mcp_rag_search_calls_ollama_and_returns_pgvector_match(
             ollama_chat_model="qwen3.6:35b",
             ollama_embedding_model="qwen3-embedding:4b",
         ),
+        graph=cfg.graph,
     )
     server = create_server(test_config)
 

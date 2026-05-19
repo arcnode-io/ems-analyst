@@ -8,12 +8,17 @@ import pytest
 from src.python_mcp_server.clients.embedder import Embedder
 from src.python_mcp_server.clients.graphiti_client import GraphitiClient
 from src.python_mcp_server.clients.rag_client import RAGClient
-from src.python_mcp_server.config import Config, LogLevel, OllamaSettings
+from src.python_mcp_server.config import (
+    Config,
+    LogLevel,
+    Neo4jGraph,
+    OllamaSettings,
+)
 from src.python_mcp_server.server import create_server
 
 
 def _test_config() -> Config:
-    """Construct a Config with Ollama settings — no AWS creds needed."""
+    """Config with Ollama settings + neo4j backend (GRAPH_URL env carries creds)."""
     return Config(
         log_level=LogLevel.INFO,
         settings=OllamaSettings(
@@ -22,6 +27,7 @@ def _test_config() -> Config:
             ollama_chat_model="qwen3.6:35b",
             ollama_embedding_model="qwen3-embedding:4b",
         ),
+        graph=Neo4jGraph(backend="neo4j"),
     )
 
 
@@ -179,7 +185,7 @@ class TestMCPServer:
     @pytest.mark.asyncio
     async def test_search_knowledge_tool_execution(self) -> None:
         """Test that search_knowledge tool can be called and returns correct format."""
-        # Arrange
+        # Arrange — explicit cfg so the tool resolves graph.backend=neo4j
         with (
             patch.dict(
                 "os.environ", {"GRAPH_URL": "neo4j+s://u:p@host:7687"}, clear=False
@@ -200,7 +206,7 @@ class TestMCPServer:
 
             mock_graphiti.search.return_value = [mock_result]
 
-            server = create_server()
+            server = create_server(config=_test_config())
 
             # Act
             _content, result_data = await server.call_tool(

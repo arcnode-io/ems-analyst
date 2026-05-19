@@ -6,13 +6,24 @@ from typing import Any, Optional, cast
 from urllib.parse import unquote, urlsplit, urlunsplit
 
 from graphiti_core import Graphiti
+from graphiti_core.cross_encoder.client import CrossEncoderClient
 from graphiti_core.driver import record_parsers as _record_parsers
 from graphiti_core.driver.neptune.operations import search_ops as _neptune_search_ops
 from graphiti_core.driver.neptune_driver import NeptuneDriver
 from graphiti_core.driver.search_interface.search_interface import SearchInterface
 from graphiti_core.edges import EntityEdge
+from graphiti_core.embedder.client import EmbedderClient
+from graphiti_core.llm_client import LLMClient
 
-from ..config import BedrockSettings, OllamaSettings, ProviderSettings, load_config
+from ..config import (
+    BedrockSettings,
+    Config,
+    Neo4jGraph,
+    NeptuneGraph,
+    NoneGraph,
+    OllamaSettings,
+    ProviderSettings,
+)
 from ..models import EntityMetadata, SearchResult
 from .graphiti_bedrock import (
     BedrockCrossEncoderClient,
@@ -69,20 +80,25 @@ class GraphitiClient:
         self.graphiti = graphiti
 
     @classmethod
-    def from_env(cls) -> "GraphitiClient":
-        """Pick a backend from env vars.
+    def from_config(cls, config: Config) -> "GraphitiClient":
+        """Pick a backend from cfg.graph + the single secret (GRAPH_URL).
 
-        GRAPH_URL → Neo4j (commercial/ISO; Aura URL carries creds).
-        NEPTUNE_HOST + AOSS_HOST → Amazon Neptune + OpenSearch Serverless (defense).
+        cfg.graph.backend=neo4j → reads GRAPH_URL env (carries creds).
+        cfg.graph.backend=neptune → uses cfg.graph.neptune_host + aoss_host.
+        cfg.graph.backend=none → RuntimeError; no defaults.
         """
-        graph_url = os.environ.get("GRAPH_URL")
-        if graph_url:
+        graph = config.graph
+
+        if isinstance(graph, Neo4jGraph):
+            graph_url = os.environ.get("GRAPH_URL")
+            if not graph_url:
+                raise RuntimeError("graph.backend=neo4j but GRAPH_URL env not set")
             # Reason: neo4j-python rejects URL-embedded creds (ConfigurationError),
             # so we strip user:pass out of GRAPH_URL and hand them to Graphiti
             # via the dedicated kwargs.
             uri, user, password = _split_neo4j_url(graph_url)
             embedder, llm_client, cross_encoder = _build_graphiti_clients(
-                load_config().settings
+                config.settings
             )
             return cls(
                 Graphiti(
@@ -95,14 +111,14 @@ class GraphitiClient:
                 )
             )
 
-        neptune_host = os.environ.get("NEPTUNE_HOST")
-        aoss_host = os.environ.get("AOSS_HOST")
-        if neptune_host and aoss_host:
+        if isinstance(graph, NeptuneGraph):
             # Strip `https://` — graphiti's opensearch client prepends scheme
             # itself; double-prefix produces an IPv6-literal-style URL.
-            clean_aoss = aoss_host.removeprefix("https://").removeprefix("http://")
+            clean_aoss = graph.aoss_host.removeprefix("https://").removeprefix(
+                "http://"
+            )
             driver = NeptuneDriver(
-                host=f"neptune-db://{neptune_host}",
+                host=f"neptune-db://{graph.neptune_host}",
                 aoss_host=clean_aoss,
             )
             # Bug 2 — NeptuneDriver builds a NeptuneSearchOperations and assigns
@@ -129,10 +145,12 @@ class GraphitiClient:
                 )
             )
 
-        raise RuntimeError(
-            "no graph backend configured — set GRAPH_URL (commercial/ISO) "
-            "or NEPTUNE_HOST + AOSS_HOST (defense)"
-        )
+        if isinstance(graph, NoneGraph):
+            raise RuntimeError(  # noqa: TRY004 — backend=none is misconfig, not wrong type
+                "no graph backend configured — set cfg.graph.backend to "
+                "neo4j (with GRAPH_URL env) or neptune (with hosts in cfg)"
+            )
+        raise TypeError(f"unknown GraphConfig type: {type(graph).__name__}")
 
     async def search(
         self, query: str, center_node_uuid: Optional[str] = None, limit: int = 10
@@ -168,7 +186,7 @@ class GraphitiClient:
 
 def _build_graphiti_clients(
     settings: ProviderSettings,
-) -> tuple[object, object, object]:
+) -> tuple[EmbedderClient, LLMClient, CrossEncoderClient]:
     """Return (embedder, llm_client, cross_encoder) for the active provider.
 
     Reason: graphiti defaults to OpenAI when these kwargs are absent, which

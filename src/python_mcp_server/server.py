@@ -16,7 +16,7 @@ def create_server(config: Optional[Config] = None) -> FastMCP:
     llm_provider discriminator (Bedrock vs Ollama).
 
     Backends at request time:
-      - GraphitiClient.from_env() — GRAPH_URL or NEPTUNE_HOST + AOSS_HOST
+      - GraphitiClient.from_config(server_config) — cfg.graph backend dispatch
       - RAGClient.from_env(embedder) — VECTOR_URL
     """
     server_config = config or load_config()
@@ -31,7 +31,7 @@ def create_server(config: Optional[Config] = None) -> FastMCP:
         USE WHEN: You need verified facts, entities, relationships, or structured
         knowledge. Combines semantic search, BM25, and graph traversal.
         """
-        client = GraphitiClient.from_env()
+        client = GraphitiClient.from_config(server_config)
         try:
             results = await client.search(query, limit=limit)
             return SearchResults(items=results, total=len(results))
@@ -56,7 +56,7 @@ def create_server(config: Optional[Config] = None) -> FastMCP:
         facts; the caller judges whether they support or contradict the statement.
         No boolean verdict — entailment is the caller's job.
         """
-        client = GraphitiClient.from_env()
+        client = GraphitiClient.from_config(server_config)
         try:
             evidence = await client.search(statement, limit=limit)
             return FactEvidence(statement=statement, evidence=evidence)
@@ -69,7 +69,7 @@ def create_server(config: Optional[Config] = None) -> FastMCP:
 
         USE WHEN: You need both structured facts and supporting context.
         """
-        graph_client = GraphitiClient.from_env()
+        graph_client = GraphitiClient.from_config(server_config)
         rag_client = RAGClient.from_env(embedder=embedder)
         try:
             graph_results = await graph_client.search(query, limit=limit)

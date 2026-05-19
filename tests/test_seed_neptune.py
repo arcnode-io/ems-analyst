@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock
 import pook
 import pytest
 
+from src.python_mcp_server.config import NeptuneGraph
 from src.python_mcp_server.seed import seed_graph_neptune
 
 NEPTUNE_HOST = "neptune.example.invalid"
@@ -19,15 +20,23 @@ LOADER_ROLE = "arn:aws:iam::123456789012:role/NeptuneLoaderRole"
 LOAD_ID = "abc-load-id-xyz"
 
 
+@pytest.fixture
+def _graph() -> NeptuneGraph:
+    """Cfg block matching the values the pook mocks expect."""
+    return NeptuneGraph(
+        backend="neptune",
+        neptune_host=NEPTUNE_HOST,
+        aoss_host=AOSS_HOST,
+        loader_role_arn=LOADER_ROLE,
+    )
+
+
 @pytest.fixture(autouse=True)
-def _env(monkeypatch: pytest.MonkeyPatch) -> None:
+def _aws_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Boto3 needs creds to sign; supply test ones so SigV4 succeeds."""
     monkeypatch.setenv("AWS_ACCESS_KEY_ID", "AKIATEST")
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "testsecret")
     monkeypatch.setenv("AWS_REGION", "us-east-1")
-    monkeypatch.setenv("NEPTUNE_HOST", NEPTUNE_HOST)
-    monkeypatch.setenv("NEPTUNE_LOADER_ROLE_ARN", LOADER_ROLE)
-    monkeypatch.setenv("AOSS_HOST", AOSS_HOST)
 
 
 @pytest.fixture
@@ -42,7 +51,7 @@ def _stub_aoss(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
 
 @pytest.mark.asyncio
 async def test_seed_graph_neptune_starts_load_and_writes_marker(
-    _stub_aoss: AsyncMock,
+    _stub_aoss: AsyncMock, _graph: NeptuneGraph
 ) -> None:
     """Happy path — marker absent, load completes, AOSS populated, marker written."""
     # Arrange — pook intercepts the openCypher marker-check, the loader
@@ -69,7 +78,7 @@ async def test_seed_graph_neptune_starts_load_and_writes_marker(
 
     try:
         # Act
-        await seed_graph_neptune()
+        await seed_graph_neptune(_graph)
 
         # Assert — all 4 mocks consumed + AOSS populate called between
         # Neptune-load-complete and marker-write
@@ -80,7 +89,9 @@ async def test_seed_graph_neptune_starts_load_and_writes_marker(
 
 
 @pytest.mark.asyncio
-async def test_seed_graph_neptune_skips_when_marker_present() -> None:
+async def test_seed_graph_neptune_skips_when_marker_present(
+    _graph: NeptuneGraph,
+) -> None:
     """Idempotent — marker present → no loader call, immediate return."""
     # Arrange — marker check returns a row; no loader call should fire
     pook.on()
@@ -91,7 +102,7 @@ async def test_seed_graph_neptune_skips_when_marker_present() -> None:
 
     try:
         # Act
-        await seed_graph_neptune()
+        await seed_graph_neptune(_graph)
 
         # Assert — only the marker check fired; no loader POST mocked
         assert pook.isdone(), f"pending mocks: {pook.pending()}"
@@ -100,7 +111,9 @@ async def test_seed_graph_neptune_skips_when_marker_present() -> None:
 
 
 @pytest.mark.asyncio
-async def test_seed_graph_neptune_raises_when_load_fails() -> None:
+async def test_seed_graph_neptune_raises_when_load_fails(
+    _graph: NeptuneGraph,
+) -> None:
     """Load failure surfaces as RuntimeError with the status payload."""
     # Arrange — load reaches LOAD_FAILED terminal state
     pook.on()
@@ -118,6 +131,6 @@ async def test_seed_graph_neptune_raises_when_load_fails() -> None:
     try:
         # Act + Assert
         with pytest.raises(RuntimeError, match="LOAD_FAILED"):
-            await seed_graph_neptune()
+            await seed_graph_neptune(_graph)
     finally:
         pook.off()

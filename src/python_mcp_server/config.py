@@ -1,13 +1,12 @@
 """Per-stage configuration loader.
 
-One axis: ENV (local | beta) — picks the cfg.yml stage block. Each stage
-holds a single provider settings block (BedrockSettings | OllamaSettings)
-dispatched by the `llm_provider` discriminator. Pydantic validates the
-right field combo at load time.
+ENV picks the stage block in cfg.defaults.yml. CFG_CUSTOMER_PATH (if set
+and the file exists) is deep-merged over the matching stage block before
+pydantic parsing — same pattern as ems-industrial-gateway.
 
-Connection URLs (GRAPH_URL / NEPTUNE_HOST / VECTOR_URL) are NOT held
-here — they come from process env at consume time (compose env_file →
-secrets.env populated by CFN-managed Secrets Manager).
+Cardinal rule: secrets stay in env. Customer-unique non-secrets live in
+cfg.customer.yml. So GRAPH_URL and VECTOR_URL stay env (they embed
+user:pass), but graph backend hostnames + IAM ARN ride cfg.
 """
 
 import enum
@@ -15,14 +14,14 @@ import logging
 import os
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 import yaml
 from pydantic import BaseModel, Field
 
 
 class LogLevel(enum.StrEnum):
-    """Stdlib logging level names; StrEnum so cfg.yml strings parse directly."""
+    """Stdlib logging level names; StrEnum so cfg strings parse directly."""
 
     ERROR = "ERROR"
     WARN = "WARN"
@@ -60,17 +59,40 @@ ProviderSettings = Annotated[
 ]
 
 
+class NoneGraph(BaseModel):
+    """No graph backend — local dev / unit suites."""
+
+    backend: Literal["none"]
+
+
+class Neo4jGraph(BaseModel):
+    """Neo4j (Aura or self-hosted). GRAPH_URL env carries creds + host."""
+
+    backend: Literal["neo4j"]
+
+
+class NeptuneGraph(BaseModel):
+    """Amazon Neptune + AOSS — defense. CFN UserData writes the hosts +
+    role into cfg.customer.yml per customer stack."""
+
+    backend: Literal["neptune"]
+    neptune_host: str
+    aoss_host: str
+    loader_role_arn: str
+
+
+GraphConfig = Annotated[
+    NoneGraph | Neo4jGraph | NeptuneGraph, Field(discriminator="backend")
+]
+
+
 class StageConfig(BaseModel):
-    """One stage block in cfg.yml."""
+    """One stage block in cfg.defaults.yml after customer merge."""
 
     log_level: LogLevel
-    e2e: bool = False  # tests-only: false → pook mocks HTTP; true → hit real services
+    e2e: bool = False  # tests-only: false → pook mocks HTTP; true → real services
     settings: ProviderSettings
-
-
-class _ConfigMap(BaseModel):
-    local: StageConfig
-    beta: StageConfig
+    graph: GraphConfig
 
 
 class Config(BaseModel):
@@ -79,16 +101,52 @@ class Config(BaseModel):
     log_level: LogLevel
     e2e: bool = False
     settings: ProviderSettings
+    graph: GraphConfig
 
 
 def load_config() -> Config:
-    """Resolve cfg[ENV] -> Config. ENV defaults to local."""
-    cfg_path = Path(__file__).parent / "cfg.yml"
-    with open(cfg_path) as file:
-        config_map = _ConfigMap(**yaml.safe_load(file))
-    env = os.environ.get("ENV", "local")
-    stage = config_map.local if env != "beta" else config_map.beta
-    return Config(log_level=stage.log_level, e2e=stage.e2e, settings=stage.settings)
+    """Production loader — reads ENV + CFG_CUSTOMER_PATH from process env."""
+    defaults = Path(__file__).parent / "cfg.defaults.yml"
+    return load_config_from(
+        defaults,
+        os.environ.get("CFG_CUSTOMER_PATH"),
+        os.environ.get("ENV", "local"),
+    )
+
+
+def load_config_from(
+    defaults_path: Path, customer_path: str | None, env_name: str
+) -> Config:
+    """Pure fn for tests. Deep-merge customer over defaults[env_name]."""
+    with open(defaults_path) as f:
+        all_data: dict[str, Any] = yaml.safe_load(f)
+    stage_data = all_data.get(env_name)
+    if stage_data is None:
+        raise RuntimeError(f"cfg.defaults.yml missing block: {env_name}")
+    if customer_path:
+        cp = Path(customer_path)
+        if cp.exists():
+            with open(cp) as f:
+                customer_data: dict[str, Any] | None = yaml.safe_load(f)
+            if customer_data:
+                _deep_merge(stage_data, customer_data)
+    stage = StageConfig(**stage_data)
+    return Config(
+        log_level=stage.log_level,
+        e2e=stage.e2e,
+        settings=stage.settings,
+        graph=stage.graph,
+    )
+
+
+def _deep_merge(base: dict[str, Any], over: dict[str, Any]) -> None:
+    """In-place deep-merge of `over` onto `base` — nested dicts recurse,
+    scalars + lists overwrite."""
+    for key, val in over.items():
+        if key in base and isinstance(base[key], dict) and isinstance(val, dict):
+            _deep_merge(base[key], val)
+        else:
+            base[key] = val
 
 
 class _ZuluFormatter(logging.Formatter):
