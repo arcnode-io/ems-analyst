@@ -1,9 +1,8 @@
-"""GET /sites/{site_id}/forecast — deterministic forecast reads.
+"""GET /forecast — deterministic forecast reads.
 
-The forecast is market-keyed (settlement_point), but the HMI contract
-is site-keyed (`/sites/{site_id}/forecast`). The controller holds the
-deploy's settlement_point (resolved from cfg by the module) and bridges
-the two — HMI keeps asking by site, the query runs by hub.
+Single-site deploy: the controller holds both the deploy's site_id
+(echoed in the response) and its settlement_point (the ERCOT hub the
+forecast is keyed on). Neither is in the path.
 """
 
 from datetime import datetime
@@ -17,31 +16,33 @@ from .forecasts_service import ForecastsService
 class ForecastsController(Routable):
     """Routes a windowed forecast query through to ForecastsService."""
 
-    def __init__(self, service: ForecastsService, settlement_point: str) -> None:
+    def __init__(
+        self, service: ForecastsService, site_id: str, settlement_point: str
+    ) -> None:
         super().__init__()
         self.service = service
+        self.site_id = site_id
         self.settlement_point = settlement_point
 
     @get(
-        "/sites/{site_id}/forecast",
+        "/forecast",
         response_model=ForecastSeries,
         tags=["Forecasts"],
         responses={200: {"description": "Series of (forecast_for, value) points"}},
     )
     async def list_forecast(
         self,
-        site_id: str,
         measurement: str,
         start: datetime,
         end: datetime,
     ) -> ForecastSeries:
-        """Return forecast points for the site in [start, end].
+        """Return forecast points for the deploy site in [start, end].
 
-        The site resolves to this deploy's settlement_point; the query
-        runs against that hub.
+        Query runs against the deploy's settlement_point; the response
+        echoes the deploy site_id.
         """
         return await self.service.get(
-            site_id=site_id,
+            site_id=self.site_id,
             settlement_point=self.settlement_point,
             measurement=measurement,
             start=start,

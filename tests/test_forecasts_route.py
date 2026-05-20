@@ -1,4 +1,8 @@
-"""HTTP route test for GET /sites/{site_id}/forecast."""
+"""HTTP route test for GET /forecast.
+
+Single-site deploy: no site_id in the path; controller holds the
+deploy site_id + settlement_point.
+"""
 
 from datetime import UTC, datetime
 from typing import cast
@@ -11,6 +15,7 @@ from src.forecasts.dto import ForecastPoint, ForecastSeries
 from src.forecasts.forecasts_controller import ForecastsController
 from src.forecasts.forecasts_service import ForecastsService
 
+_DEPLOY_SITE: str = "demo-site"
 _DEPLOY_HUB: str = "HB_NORTH"
 
 
@@ -56,19 +61,21 @@ class _FakeForecastsService:
 def client() -> tuple[TestClient, _FakeForecastsService]:
     fake = _FakeForecastsService()
     app = FastAPI()
-    # Controller carries the deploy's settlement_point (HB_NORTH).
+    # Controller carries the deploy's site_id + settlement_point.
     app.include_router(
         ForecastsController(
-            cast(ForecastsService, fake), settlement_point=_DEPLOY_HUB
+            cast(ForecastsService, fake),
+            site_id=_DEPLOY_SITE,
+            settlement_point=_DEPLOY_HUB,
         ).router
     )
     return TestClient(app), fake
 
 
 class TestForecastsRoute:
-    """AAA — controller maps site → settlement_point + shapes JSON."""
+    """AAA — controller maps deploy site → settlement_point + shapes JSON."""
 
-    def test_returns_series_for_site(
+    def test_returns_series(
         self, client: tuple[TestClient, _FakeForecastsService]
     ) -> None:
         # Arrange
@@ -76,7 +83,7 @@ class TestForecastsRoute:
 
         # Act
         response = c.get(
-            "/sites/demo-site/forecast",
+            "/forecast",
             params={
                 "measurement": "dam_lmp_price",
                 "start": "2026-05-17T00:00:00Z",
@@ -87,22 +94,22 @@ class TestForecastsRoute:
         # Assert
         assert response.status_code == 200
         body = response.json()
-        assert body["site_id"] == "demo-site"
-        assert body["settlement_point"] == "HB_NORTH"
+        assert body["site_id"] == _DEPLOY_SITE
+        assert body["settlement_point"] == _DEPLOY_HUB
         assert body["measurement"] == "dam_lmp_price"
         assert body["model_name"] == "dam-lmp-forecast"
         assert len(body["points"]) == 1
         assert body["points"][0]["value"] == 42.5
 
-    def test_maps_site_to_deploy_settlement_point(
+    def test_query_runs_against_deploy_hub(
         self, client: tuple[TestClient, _FakeForecastsService]
     ) -> None:
         # Arrange
         c, fake = client
 
-        # Act — caller names a site; controller resolves to the hub
+        # Act
         c.get(
-            "/sites/site-X/forecast",
+            "/forecast",
             params={
                 "measurement": "dam_lmp_price",
                 "start": "2026-05-17T00:00:00Z",
@@ -110,7 +117,7 @@ class TestForecastsRoute:
             },
         )
 
-        # Assert — site echoed, query ran against the deploy hub
+        # Assert — query keyed on the deploy hub, site echoed
         call = fake.calls[0]
-        assert call["site_id"] == "site-X"
-        assert call["settlement_point"] == "HB_NORTH"
+        assert call["site_id"] == _DEPLOY_SITE
+        assert call["settlement_point"] == _DEPLOY_HUB

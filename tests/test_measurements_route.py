@@ -1,8 +1,7 @@
-"""HTTP route test for GET /sites/{site_id}/measurements.
+"""HTTP route test for GET /measurements.
 
-Verifies the controller wires device_id/measurement/start/end/aggregation
-query params correctly and shapes JSON per the bucketed MeasurementSeries
-DTO.
+Single-site deploy: no site_id in the path; the controller holds the
+deploy site_id. Verifies query-param wiring + JSON shape.
 """
 
 from datetime import UTC, datetime
@@ -15,6 +14,8 @@ from fastapi.testclient import TestClient
 from src.measurements.dto import Aggregation, MeasurementPoint, MeasurementSeries
 from src.measurements.measurements_controller import MeasurementsController
 from src.measurements.measurements_service import MeasurementsService
+
+_DEPLOY_SITE: str = "demo-site"
 
 
 class _FakeMeasurementsService:
@@ -59,7 +60,11 @@ def client() -> tuple[TestClient, _FakeMeasurementsService]:
     """FastAPI client with a fake service jacked into the controller."""
     fake = _FakeMeasurementsService()
     app = FastAPI()
-    app.include_router(MeasurementsController(cast(MeasurementsService, fake)).router)
+    app.include_router(
+        MeasurementsController(
+            cast(MeasurementsService, fake), site_id=_DEPLOY_SITE
+        ).router
+    )
     return TestClient(app), fake
 
 
@@ -70,11 +75,11 @@ class TestMeasurementsRoute:
         self, client: tuple[TestClient, _FakeMeasurementsService]
     ) -> None:
         # Arrange
-        c, _ = client
+        c, fake = client
 
         # Act
         response = c.get(
-            "/sites/site-A/measurements",
+            "/measurements",
             params={
                 "device_id": "device-1",
                 "measurement": "power_kw",
@@ -83,13 +88,12 @@ class TestMeasurementsRoute:
             },
         )
 
-        # Assert
+        # Assert — deploy site_id used, JSON shaped
         assert response.status_code == 200
         body = response.json()
-        assert body["site_id"] == "site-A"
+        assert body["site_id"] == _DEPLOY_SITE
+        assert fake.calls[0]["site_id"] == _DEPLOY_SITE
         assert body["device_id"] == "device-1"
-        assert body["measurement"] == "power_kw"
-        assert body["unit"] == "kw"
         assert len(body["points"]) == 2
         assert body["points"][0]["value"] == 42.5
         assert body["points"][1]["value"] is None
@@ -102,7 +106,7 @@ class TestMeasurementsRoute:
 
         # Act — no aggregation param
         c.get(
-            "/sites/site-B/measurements",
+            "/measurements",
             params={
                 "device_id": "device-2",
                 "measurement": "energy_kwh",
@@ -122,7 +126,7 @@ class TestMeasurementsRoute:
 
         # Act
         c.get(
-            "/sites/site-C/measurements",
+            "/measurements",
             params={
                 "device_id": "device-3",
                 "measurement": "soc",

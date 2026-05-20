@@ -1,4 +1,7 @@
-"""HTTP route test for GET /sites/{site_id}/devices."""
+"""HTTP route test for GET /devices.
+
+Single-site deploy: no site_id in the path; controller holds it.
+"""
 
 from typing import cast
 
@@ -9,6 +12,8 @@ from fastapi.testclient import TestClient
 from src.devices.devices_controller import DevicesController
 from src.devices.devices_service import DevicesService
 from src.devices.dto import DeviceList, DeviceRow
+
+_DEPLOY_SITE: str = "demo-site"
 
 
 class _FakeDevicesService:
@@ -32,7 +37,9 @@ class _FakeDevicesService:
 def client() -> tuple[TestClient, _FakeDevicesService]:
     fake = _FakeDevicesService()
     app = FastAPI()
-    app.include_router(DevicesController(cast(DevicesService, fake)).router)
+    app.include_router(
+        DevicesController(cast(DevicesService, fake), site_id=_DEPLOY_SITE).router
+    )
     return TestClient(app), fake
 
 
@@ -43,15 +50,16 @@ class TestDevicesRoute:
         self, client: tuple[TestClient, _FakeDevicesService]
     ) -> None:
         # Arrange
-        c, _ = client
+        c, fake = client
 
         # Act
-        response = c.get("/sites/site-D/devices")
+        response = c.get("/devices")
 
         # Assert
         assert response.status_code == 200
         body = response.json()
-        assert body["site_id"] == "site-D"
+        assert body["site_id"] == _DEPLOY_SITE
+        assert fake.calls[0]["site_id"] == _DEPLOY_SITE
         assert len(body["devices"]) == 2
         assert body["devices"][0]["device_id"] == "BESS-01"
         assert body["devices"][0]["status"] == "ok"
@@ -64,7 +72,7 @@ class TestDevicesRoute:
         c, fake = client
 
         # Act — repeat status query param to send a list
-        c.get("/sites/site-D/devices?status=alarm&status=warn")
+        c.get("/devices?status=alarm&status=warn")
 
         # Assert
         assert fake.calls[0]["status"] == ["alarm", "warn"]

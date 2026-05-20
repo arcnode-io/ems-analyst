@@ -16,27 +16,27 @@
 
 ## API Endpoints
 
-### GET `/sites/{site_id}/measurements`
+### GET `/measurements`
 
 Hourly-bucketed gap-filled timeseries from the canonical `measurements` table.
 
 Params: `device_id` (str), `measurement` (str), `start` (ISO-8601), `end` (ISO-8601), `aggregation` (mean|max|min|last, default `mean`).
 Response: `{ site_id, device_id, measurement, unit, points: [{ ts, value|null }] }`.
 
-### GET `/sites/{site_id}/devices`
+### GET `/devices`
 
 Distinct devices at the site with their latest `status` measurement.
 
 Params: `status` (repeatable; optional filter).
 Response: `{ site_id, devices: [{ device_id, status|null }] }`.
 
-### GET `/sites/{site_id}/description`
+### GET `/description`
 
 Inventory of distinct `(device, measurement)` pairs + sample counts. Discovery payload — agents call this before guessing measurement names.
 
 Response: `{ site_id, pairs: [{ device_id, measurement, samples }] }`.
 
-### GET `/sites/{site_id}/forecast`
+### GET `/forecast`
 
 Query the `forecasts` table (populated by `ems-analyst-model`'s scoring step).
 

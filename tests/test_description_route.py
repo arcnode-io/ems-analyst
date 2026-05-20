@@ -1,4 +1,7 @@
-"""HTTP route test for GET /sites/{site_id}/description."""
+"""HTTP route test for GET /description.
+
+Single-site deploy: no site_id in the path; controller holds it.
+"""
 
 from typing import cast
 
@@ -9,6 +12,8 @@ from fastapi.testclient import TestClient
 from src.description.description_controller import DescriptionController
 from src.description.description_service import DescriptionService
 from src.description.dto import MeasurementPair, SiteDescription
+
+_DEPLOY_SITE: str = "demo-site"
 
 
 class _FakeDescriptionService:
@@ -34,7 +39,11 @@ class _FakeDescriptionService:
 def client() -> tuple[TestClient, _FakeDescriptionService]:
     fake = _FakeDescriptionService()
     app = FastAPI()
-    app.include_router(DescriptionController(cast(DescriptionService, fake)).router)
+    app.include_router(
+        DescriptionController(
+            cast(DescriptionService, fake), site_id=_DEPLOY_SITE
+        ).router
+    )
     return TestClient(app), fake
 
 
@@ -45,15 +54,16 @@ class TestDescriptionRoute:
         self, client: tuple[TestClient, _FakeDescriptionService]
     ) -> None:
         # Arrange
-        c, _ = client
+        c, fake = client
 
         # Act
-        response = c.get("/sites/site-E/description")
+        response = c.get("/description")
 
         # Assert
         assert response.status_code == 200
         body = response.json()
-        assert body["site_id"] == "site-E"
+        assert body["site_id"] == _DEPLOY_SITE
+        assert fake.calls[0] == _DEPLOY_SITE
         assert len(body["pairs"]) == 2
         assert body["pairs"][0]["device_id"] == "BESS-01"
         assert body["pairs"][0]["measurement"] == "soc"

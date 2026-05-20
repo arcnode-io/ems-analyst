@@ -1,4 +1,7 @@
-"""GET /sites/{site_id}/devices — distinct devices + latest status."""
+"""GET /devices — distinct devices + latest status.
+
+Single-site deploy: site_id comes from cfg, not the path.
+"""
 
 from typing import Annotated
 
@@ -12,20 +15,20 @@ from .dto import DeviceList
 class DevicesController(Routable):
     """Routes a device-inventory query through to DevicesService."""
 
-    def __init__(self, service: DevicesService) -> None:
+    def __init__(self, service: DevicesService, site_id: str) -> None:
         super().__init__()
         self.service = service
+        self.site_id = site_id
 
     @get(
-        "/sites/{site_id}/devices",
+        "/devices",
         response_model=DeviceList,
         tags=["Devices"],
         responses={200: {"description": "Distinct devices at the site"}},
     )
     async def list_devices(
         self,
-        site_id: str,
         status: Annotated[list[str] | None, Query()] = None,
     ) -> DeviceList:
         """Return the device list — optional status filter narrows it."""
-        return await self.service.list(site_id=site_id, status=status)
+        return await self.service.list(site_id=self.site_id, status=status)
