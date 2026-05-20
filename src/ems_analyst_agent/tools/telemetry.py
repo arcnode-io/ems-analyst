@@ -1,29 +1,21 @@
 """Telemetry builders — Pydantic artifact factories backed by ServerClient.
 
-Real builders (`build_timeseries`, `build_device_list`,
-`build_site_description`) read through ems-analyst-server's REST API.
-Stub builders (`build_markets_stub`, `build_energy_breakdown_stub`)
-return clearly-labeled placeholder charts — the derivation pipelines
-those features need don't exist yet.
-
-RunContext wrappers live in `telemetry_tools.py`.
+`build_timeseries`, `build_device_list`, `build_site_description` read
+through ems-analyst-server's REST API. Markets revenue + energy
+breakdown live in `site_analytics.py`. RunContext wrappers in
+`telemetry_tools.py`.
 """
 
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import Literal
 
 from ..schemas import (
     AnalystArtifact,
-    BarSpec,
     LineSpec,
-    PieSpec,
     TableSpec,
 )
 from ..server_client import Aggregation, ServerClient
-
-_STUB_NOTE: str = " - PLACEHOLDER (derivation pipeline not yet wired)"
 
 
 @dataclass
@@ -174,54 +166,4 @@ async def build_device_list(
     )
     return AnalystArtifact.model_validate(
         {"kind": "table", "spec": spec.model_dump(by_alias=True)}
-    )
-
-
-def build_markets_stub(
-    window: str = "today",
-    group_by: Literal["market", "hour"] = "market",
-) -> AnalystArtifact:
-    """STUB. Site revenue by market = sum(site_dispatch * clearing_price).
-
-    Requires: site dispatch published per market product per interval +
-    market clearing price feed (gridstatus.io has it) + revenue
-    derivation service. Returns labeled placeholder so the chart renders
-    and the LLM conveys uncertainty rather than presenting fake values
-    as fact.
-    """
-    spec = BarSpec.model_validate(
-        {
-            "title": f"Revenue by {group_by} ({window}){_STUB_NOTE}",
-            "xAxis": {"label": "Market", "categories": ["DAM", "RTM", "FREQ"]},
-            "yAxis": {"label": "Revenue", "unit": "USD"},
-            "series": [{"label": "placeholder", "values": [0.0, 0.0, 0.0]}],
-            "dataAsOf": _now(),
-        }
-    )
-    return AnalystArtifact.model_validate(
-        {"kind": "bar", "spec": spec.model_dump(by_alias=True)}
-    )
-
-
-def build_energy_breakdown_stub(
-    window: str = "today",
-    by: Literal["source", "destination"] = "source",
-) -> AnalystArtifact:
-    """STUB. Per-source energy = integrate(source_power_kw dt) over window.
-
-    Requires: per-source meter measurements named in a registry (e.g.
-    solar_inverter_p_kw, grid_meter_p_kw) + trapezoidal integration over
-    interval. Returns labeled placeholder so the chart renders and the
-    LLM conveys uncertainty rather than presenting fake values as fact.
-    """
-    spec = PieSpec.model_validate(
-        {
-            "title": f"Energy by {by} ({window}){_STUB_NOTE}",
-            "unit": "MWh",
-            "slices": [{"label": "placeholder", "value": 0.0}],
-            "dataAsOf": _now(),
-        }
-    )
-    return AnalystArtifact.model_validate(
-        {"kind": "pie", "spec": spec.model_dump(by_alias=True)}
     )

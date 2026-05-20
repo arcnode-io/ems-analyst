@@ -1,7 +1,7 @@
-"""RunContext wrappers around telemetry builders.
+"""RunContext wrappers around telemetry + site-analytics builders.
 
 Separated from telemetry.py to keep each file under the 200-line cap.
-The Agent imports these four and registers them as Tool() instances.
+The Agent imports these and registers them as Tool() instances.
 """
 
 from typing import Literal
@@ -9,12 +9,11 @@ from typing import Literal
 from pydantic_ai import RunContext
 
 from ..server_client import ServerClient
+from .site_analytics import build_energy_breakdown, build_markets
 from .telemetry import (
     _TelemetryDeps,
     _parse_window,
     build_device_list,
-    build_energy_breakdown_stub,
-    build_markets_stub,
     build_site_description,
     build_timeseries,
 )
@@ -76,35 +75,46 @@ async def list_devices_where(
 
 async def query_markets(
     ctx: RunContext[_TelemetryDeps],
-    window: str = "today",
-    group_by: Literal["market", "hour"] = "market",
+    window: str = "24h",
 ) -> str:
-    """PLACEHOLDER - site revenue by market.
+    """Site revenue by market (DAM + RTM) over the window.
 
-    Renders a labeled placeholder chart. Real implementation needs the
-    revenue derivation pipeline (site dispatch x clearing price). See
-    build_markets_stub docstring.
+    Revenue = Σ_hour( dispatch_mw * clearing_price_$/MWh ). BarSpec
+    with one bar per market.
+
+    Args:
+        window: ISO-8601 duration ("PT24H") or shorthand ("24h","7d","30d").
     """
-    ctx.deps.artifacts.append(build_markets_stub(window, group_by))
-    return (
-        f"Returned PLACEHOLDER revenue chart (window={window}). "
-        "Real revenue derivation pipeline is not yet wired."
-    )
+    td = _parse_window(window)
+    client = ctx.deps.server
+    assert isinstance(client, ServerClient)
+    art = await build_markets(client, ctx.deps.site_id, td)
+    ctx.deps.artifacts.append(art)
+    if art.kind == "error":
+        return f"No market dispatch data over {window}."
+    return f"Returned revenue by market for the last {window}."
 
 
 async def query_energy_breakdown(
     ctx: RunContext[_TelemetryDeps],
-    window: str = "today",
+    window: str = "24h",
     by: Literal["source", "destination"] = "source",
 ) -> str:
-    """PLACEHOLDER - site energy mix breakdown.
+    """Site energy mix by source or destination over the window.
 
-    Renders a labeled placeholder chart. Real implementation needs the
-    per-source meter measurement registry. See build_energy_breakdown_stub
-    docstring.
+    Source = BESS discharge + grid import. Destination = compute load +
+    BESS charge + grid export. Integrated per-device power → kWh,
+    rendered as PieSpec.
+
+    Args:
+        window: ISO-8601 duration ("PT24H") or shorthand ("24h","7d").
+        by: source | destination — direction of energy flow.
     """
-    ctx.deps.artifacts.append(build_energy_breakdown_stub(window, by))
-    return (
-        f"Returned PLACEHOLDER energy breakdown (window={window}, by={by}). "
-        "Per-source meter measurement registry is not yet wired."
-    )
+    td = _parse_window(window)
+    client = ctx.deps.server
+    assert isinstance(client, ServerClient)
+    art = await build_energy_breakdown(client, ctx.deps.site_id, td, by)
+    ctx.deps.artifacts.append(art)
+    if art.kind == "error":
+        return f"No energy {by} data over {window}."
+    return f"Returned energy by {by} for the last {window}."

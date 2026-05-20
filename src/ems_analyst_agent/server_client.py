@@ -111,8 +111,8 @@ class ServerClient:
                 params={
                     "device_id": device_id,
                     "measurement": measurement,
-                    "start": start.isoformat(),
-                    "end": end.isoformat(),
+                    "start": int(start.timestamp()),
+                    "end": int(end.timestamp()),
                     "aggregation": aggregation,
                 },
             )
@@ -153,8 +153,8 @@ class ServerClient:
                 f"{self.base_url}/sites/{site_id}/forecast",
                 params={
                     "measurement": measurement,
-                    "start": start.isoformat(),
-                    "end": end.isoformat(),
+                    "start": int(start.timestamp()),
+                    "end": int(end.timestamp()),
                 },
             )
             resp.raise_for_status()
