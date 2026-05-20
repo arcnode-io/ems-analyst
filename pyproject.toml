@@ -75,6 +75,7 @@ ems_analyst_agent = [
     "prompts/*.md",
     "prompts/**/*.md",
     "demo_data/*.csv",
+    "demo_data/*.json",
 ]
 
 [tool.uv.sources]
