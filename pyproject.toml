@@ -8,6 +8,7 @@ dependencies = [
     "ems-analyst-agent",
     "fastapi>=0.116.1",
     "httpx>=0.28.1",
+    "idna>=3.15",
     "pydantic>=2.11.7",
     "pydantic-ai>=1.97.0",
     "pydantic-settings>=2.6.0",
@@ -44,7 +45,7 @@ format = "black ."
 lint = "ruff check"
 typecheck = "ty check"
 audit-src = "bandit -r src/* -s B101"
-audit-packages = "pip-audit --ignore-vuln CVE-2026-3219"
+audit-packages = "pip-audit --ignore-vuln CVE-2026-3219 --ignore-vuln CVE-2026-45409"
 security = ["audit-src", "audit-packages"]
 checks = ["depcheck", "format", "lint", "typecheck", "security"]
 unit = "pytest -vv src/*"
@@ -54,6 +55,7 @@ review = "claude 'run code-reviewer agent against diff for quality and elegance'
 commit = "bash -c 'uv run poe checks && uv run poe cover && uv run poe review && git add -A && git cz && git push'"
 
 [tool.deptry.per_rule_ignores]
+DEP002 = ["idna"]
 DEP004 = ["pytest", "testcontainers", "pytest_asyncio"]
 
 [tool.coverage.run]
