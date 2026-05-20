@@ -1,22 +1,20 @@
 """Real-container integration test for GraphitiClient.from_config() Neo4j path.
 
 Spins up a real Neo4j 5 community container and verifies that
-GraphitiClient.from_config() picks the Neo4j branch, splits creds out of the
-URL, actually connects, and that .search() returns a list cleanly.
+from_config picks the Neo4j branch, splits creds out of GRAPH_URL,
+actually connects via bolt, and that build_indices_and_constraints
+fires real Cypher without exploding.
 
-OpenAI clients are stubbed at the graphiti_core import sites — this test
-covers the from_config → driver → connect → search wiring, NOT Graphiti's
-LLM extraction. Semantic correctness of returned facts belongs in a
-higher-level e2e test with real OpenAI credentials.
+Ollama at arcnode dev endpoint (173.211.12.43:11434):
+  - cfg.e2e=false (default, CI): pook intercepts /v1/embeddings, returns
+    a 1024d zero vector — proves wiring without external dep.
+  - cfg.e2e=true: hits real Ollama, free dogfood.
 """
 
 import os
-from unittest.mock import AsyncMock, patch
 
+import pook
 import pytest
-from graphiti_core.cross_encoder.client import CrossEncoderClient
-from graphiti_core.embedder import EmbedderClient
-from graphiti_core.llm_client import LLMClient
 from testcontainers.neo4j import Neo4jContainer
 
 from src.python_mcp_server.clients.graphiti_client import GraphitiClient
@@ -25,10 +23,13 @@ from src.python_mcp_server.config import (
     LogLevel,
     Neo4jGraph,
     OllamaSettings,
+    load_config,
 )
 from tests.fixtures.containers import neo4j  # noqa: F401  pytest fixture
 
-EMBED_DIM = 1024
+OLLAMA_BASE_URL = "http://173.211.12.43:11434/v1"
+# Ollama Qwen3 returns 2560d; embedder truncates to EMBEDDING_DIM (1024).
+OLLAMA_FULL_VEC = [0.0] * 2560
 
 
 def _graph_url_with_embedded_creds(container: Neo4jContainer) -> str:
@@ -38,46 +39,45 @@ def _graph_url_with_embedded_creds(container: Neo4jContainer) -> str:
     return f"bolt://{container.username}:{container.password}@{host}:{port}"
 
 
-def _cfg() -> Config:
-    return Config(
+@pytest.mark.asyncio
+async def test_from_config_connects_to_real_neo4j_and_search_returns_list(
+    neo4j: Neo4jContainer,
+) -> None:
+    """from_config() with GRAPH_URL → real connect → search() returns a list.
+
+    Pook (cfg.e2e=false) or real Ollama (cfg.e2e=true) handles the
+    embedding call that fires when graphiti builds its lucene indexes
+    + runs the hybrid search.
+    """
+    # Arrange
+    cfg = load_config()
+    os.environ["GRAPH_URL"] = _graph_url_with_embedded_creds(neo4j)
+
+    if not cfg.e2e:
+        pook.on()
+        pook.enable_network()
+        # build_indices_and_constraints + search both embed the query
+        # text. Mock both as a single repeating matcher.
+        pook.post(f"{OLLAMA_BASE_URL}/embeddings").persist().reply(200).json(
+            {"data": [{"embedding": OLLAMA_FULL_VEC}]}
+        )
+
+    test_config = Config(
         log_level=LogLevel.INFO,
+        e2e=cfg.e2e,
         settings=OllamaSettings(
             llm_provider="ollama",
-            ollama_base_url="http://localhost:11434/v1",
+            ollama_base_url=OLLAMA_BASE_URL,
             ollama_chat_model="qwen3.6:35b",
             ollama_embedding_model="qwen3-embedding:4b",
         ),
         graph=Neo4jGraph(backend="neo4j"),
     )
 
+    try:
+        client = GraphitiClient.from_config(test_config)
 
-@pytest.mark.asyncio
-async def test_from_config_connects_to_real_neo4j_and_search_returns_list(
-    neo4j: Neo4jContainer,
-) -> None:
-    """from_config() with GRAPH_URL → real connect → search() returns a list."""
-    # Arrange — stub OpenAI defaults so search() doesn't hit the network.
-    # spec=BaseClass is required so Graphiti's pydantic validation accepts them.
-    mock_llm = AsyncMock(spec=LLMClient)
-    mock_embedder = AsyncMock(spec=EmbedderClient)
-    mock_embedder.create.return_value = [0.1] * EMBED_DIM
-    mock_embedder.create_batch.return_value = [[0.1] * EMBED_DIM]
-    mock_reranker = AsyncMock(spec=CrossEncoderClient)
-    mock_reranker.rank.return_value = []
-
-    os.environ["GRAPH_URL"] = _graph_url_with_embedded_creds(neo4j)
-
-    with (
-        patch("graphiti_core.graphiti.OpenAIClient", return_value=mock_llm),
-        patch("graphiti_core.graphiti.OpenAIEmbedder", return_value=mock_embedder),
-        patch(
-            "graphiti_core.graphiti.OpenAIRerankerClient", return_value=mock_reranker
-        ),
-    ):
-        client = GraphitiClient.from_config(_cfg())
-
-        # Smoke-test the connection: build the indices Graphiti expects.
-        # This issues real Cypher against the container — proves auth + bolt work.
+        # Smoke-test the connection: real Cypher against the container.
         await client.graphiti.build_indices_and_constraints()
 
         # Act
@@ -89,3 +89,5 @@ async def test_from_config_connects_to_real_neo4j_and_search_returns_list(
         ), "search() should return a list even when the graph is empty"
 
         await client.close()
+    finally:
+        pook.off()
