@@ -3,6 +3,10 @@
 Table is owned by ems-analyst-model's score+write step. This service
 only reads. Empty windows return an envelope with empty points and a
 sentinel model_name/version so the JSON shape stays stable.
+
+Forecasts are keyed by `settlement_point` (the ERCOT market hub the
+model predicts), NOT by customer site_id. The controller resolves the
+requested site → its settlement_point via the deploy's cfg.
 """
 
 import logging
@@ -19,7 +23,7 @@ _TIMESERIES_URL_ENV: str = "TIMESERIES_URL"
 
 
 class ForecastsService:
-    """Read forecast rows for one site+measurement in a time window."""
+    """Read forecast rows for one settlement_point + measurement in a window."""
 
     def __init__(self, postgres_url: str | None = None) -> None:
         """Optional URL override for tests; production reads env per-request."""
@@ -28,16 +32,20 @@ class ForecastsService:
     async def get(
         self,
         site_id: str,
+        settlement_point: str,
         measurement: str,
         start: datetime,
         end: datetime,
     ) -> ForecastSeries:
         """Return forecast points in [start, end] ordered by forecast_for ASC.
 
-        If multiple model_names cover the window, we keep the rows for
-        whichever model_name shows up first (lexicographic) — keep one
-        forecast surface per (site, measurement) to start; we can pick
-        an explicit model later if more than one ever co-exists.
+        Query is by `settlement_point` (the market hub). `site_id` is
+        only echoed back in the response so the HMI sees the site it
+        asked for.
+
+        If multiple model_names cover the window, keep the rows for
+        whichever model_name sorts first — one forecast surface per
+        (settlement_point, measurement) to start.
         """
         url = self._postgres_url or os.environ[_TIMESERIES_URL_ENV]
         conn = await asyncpg.connect(url)
@@ -45,10 +53,10 @@ class ForecastsService:
             rows = await conn.fetch(
                 "SELECT forecast_for, unit, value, model_name, model_version "
                 "FROM forecasts "
-                "WHERE site_id = $1 AND measurement = $2 "
+                "WHERE settlement_point = $1 AND measurement = $2 "
                 "  AND forecast_for BETWEEN $3 AND $4 "
                 "ORDER BY model_name ASC, forecast_for ASC",
-                site_id,
+                settlement_point,
                 measurement,
                 start,
                 end,
@@ -58,6 +66,7 @@ class ForecastsService:
         if not rows:
             return ForecastSeries(
                 site_id=site_id,
+                settlement_point=settlement_point,
                 measurement=measurement,
                 unit="",
                 model_name="",
@@ -66,9 +75,6 @@ class ForecastsService:
             )
         first = rows[0]
         model_name = str(first["model_name"])
-        # Reason: ORDER BY model_name groups same-model rows contiguously;
-        # filter to the first model_name's rows so we don't interleave
-        # competing models in the same series.
         model_rows = [r for r in rows if r["model_name"] == model_name]
         points = [
             ForecastPoint(forecast_for=r["forecast_for"], value=r["value"])
@@ -76,6 +82,7 @@ class ForecastsService:
         ]
         return ForecastSeries(
             site_id=site_id,
+            settlement_point=settlement_point,
             measurement=measurement,
             unit=str(first["unit"]),
             model_name=model_name,

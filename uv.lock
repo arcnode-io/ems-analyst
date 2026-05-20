@@ -648,11 +648,12 @@ wheels = [
 [[package]]
 name = "ems-analyst-agent"
 version = "1.0.0b0"
-source = { git = "https://gitlab.com/arcnode-io/ems-analyst-agent.git#6e6fe1b629bc0abca7f1c360f98fdf70dc865d37" }
+source = { git = "https://gitlab.com/arcnode-io/ems-analyst-agent.git#c87420f0a1f1cd6e0299bce1203c47e99a77a106" }
 dependencies = [
     { name = "asyncpg" },
     { name = "feedparser" },
     { name = "httpx" },
+    { name = "idna" },
     { name = "pgvector" },
     { name = "pydantic" },
     { name = "pydantic-ai" },

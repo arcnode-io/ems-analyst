@@ -5,8 +5,12 @@ from .measurements_service import MeasurementsService
 
 
 class MeasurementsModule:
-    """Construct the /sites/{id}/measurements router with its service."""
+    """Construct the /sites/{id}/measurements router with its service.
 
-    def __init__(self) -> None:
-        """Service reads TIMESERIES_URL lazily per-request — no env at init."""
-        self.router = MeasurementsController(MeasurementsService()).router
+    `service` override lets AppModule inject the ENV=demo CSV-backed
+    DemoData instead of the real Postgres-backed service.
+    """
+
+    def __init__(self, service: MeasurementsService | None = None) -> None:
+        """Default service reads TIMESERIES_URL lazily per-request."""
+        self.router = MeasurementsController(service or MeasurementsService()).router

@@ -18,9 +18,15 @@ class ForecastPoint(BaseModel):
 
 
 class ForecastSeries(BaseModel):
-    """Response envelope — predictions for one site+measurement."""
+    """Response envelope — predictions for one site+measurement.
+
+    `site_id` is the customer site the caller asked for.
+    `settlement_point` is the ERCOT market hub the forecast is actually
+    keyed on — surfaced so the HMI can show which hub drives the curve.
+    """
 
     site_id: str
+    settlement_point: str
     measurement: str
     unit: str
     model_name: str

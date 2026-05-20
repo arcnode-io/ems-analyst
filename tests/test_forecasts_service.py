@@ -1,8 +1,9 @@
 """Integration tests for ForecastsService against a real Postgres.
 
 The `forecasts` table is owned by ems-analyst-model's score+write step.
-This service reads it for the agent + HMI via REST. Schema mirrors what
-ems-analyst-model's score.py emits — keep in sync if either side moves.
+This service reads it for the agent + HMI via REST. Forecasts are keyed
+by `settlement_point` (the market hub), not customer site_id — schema
+mirrors what ems-analyst-model's score.py emits.
 """
 
 from collections.abc import Generator
@@ -38,15 +39,15 @@ async def _seed_forecasts_table(postgres_url: str) -> None:
     try:
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS forecasts (
-                forecast_for  TIMESTAMPTZ NOT NULL,
-                site_id       TEXT NOT NULL,
-                measurement   TEXT NOT NULL,
-                unit          TEXT NOT NULL,
-                value         DOUBLE PRECISION NOT NULL,
-                model_name    TEXT NOT NULL,
-                model_version INT NOT NULL,
-                forecasted_at TIMESTAMPTZ NOT NULL,
-                PRIMARY KEY (forecast_for, site_id, measurement, model_name)
+                forecast_for     TIMESTAMPTZ NOT NULL,
+                settlement_point TEXT NOT NULL,
+                measurement      TEXT NOT NULL,
+                unit             TEXT NOT NULL,
+                value            DOUBLE PRECISION NOT NULL,
+                model_name       TEXT NOT NULL,
+                model_version    INT NOT NULL,
+                forecasted_at    TIMESTAMPTZ NOT NULL,
+                PRIMARY KEY (forecast_for, settlement_point, measurement, model_name)
             )
         """)
     finally:
@@ -56,7 +57,7 @@ async def _seed_forecasts_table(postgres_url: str) -> None:
 async def _insert_forecast(
     postgres_url: str,
     forecast_for: datetime,
-    site_id: str,
+    settlement_point: str,
     measurement: str,
     unit: str,
     value: float,
@@ -67,12 +68,12 @@ async def _insert_forecast(
     try:
         await conn.execute(
             "INSERT INTO forecasts "
-            "(forecast_for, site_id, measurement, unit, value, "
+            "(forecast_for, settlement_point, measurement, unit, value, "
             " model_name, model_version, forecasted_at) "
             "VALUES ($1, $2, $3, $4, $5, $6, $7, $8) "
             "ON CONFLICT DO NOTHING",
             forecast_for,
-            site_id,
+            settlement_point,
             measurement,
             unit,
             value,
@@ -85,7 +86,7 @@ async def _insert_forecast(
 
 
 class TestForecastsService:
-    """AAA — service reads forecast rows in a time window."""
+    """AAA — service reads forecast rows by settlement_point in a window."""
 
     @pytest.mark.asyncio
     async def test_get_returns_seeded_forecast(
@@ -97,7 +98,7 @@ class TestForecastsService:
         await _insert_forecast(
             postgres_url,
             forecast_for=fc_for,
-            site_id="HB_NORTH",
+            settlement_point="HB_NORTH",
             measurement="dam_lmp_price",
             unit="usd_per_mwh",
             value=42.5,
@@ -105,16 +106,18 @@ class TestForecastsService:
             model_version=7,
         )
 
-        # Act
+        # Act — query by settlement_point; site_id is just echoed back
         actual = await forecasts_service.get(
-            site_id="HB_NORTH",
+            site_id="demo-site",
+            settlement_point="HB_NORTH",
             measurement="dam_lmp_price",
             start=fc_for - timedelta(hours=1),
             end=fc_for + timedelta(hours=1),
         )
 
         # Assert
-        assert actual.site_id == "HB_NORTH"
+        assert actual.site_id == "demo-site"
+        assert actual.settlement_point == "HB_NORTH"
         assert actual.measurement == "dam_lmp_price"
         assert actual.unit == "usd_per_mwh"
         assert actual.model_name == "dam-lmp-forecast"
@@ -132,7 +135,8 @@ class TestForecastsService:
 
         # Act
         actual = await forecasts_service.get(
-            site_id="HB_NORTH",
+            site_id="demo-site",
+            settlement_point="HB_NORTH",
             measurement="dam_lmp_price",
             start=far_past,
             end=far_past + timedelta(hours=1),
