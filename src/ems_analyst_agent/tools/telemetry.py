@@ -25,6 +25,7 @@ class _TelemetryDeps:
     artifacts: list[AnalystArtifact] = field(default_factory=list)
     site_id: str = ""
     server: object | None = None
+    device_api: object | None = None
 
 
 def _now() -> str:

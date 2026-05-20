@@ -14,6 +14,7 @@ from pydantic_ai.messages import ModelMessage
 from python_mcp_server.clients import make_embedder
 
 from .config import chat_model, load_config
+from .device_api import DeviceApiClient
 from .memory import MemoryService
 from .prompts import load_system_prompt
 from .schemas import AnalystArtifact, AnalystMessage
@@ -28,6 +29,7 @@ from .tools.telemetry_tools import (
     query_markets,
     query_timeseries,
 )
+from .tools.topology_tool import get_topology
 from .tools.weather_api import get_weather_forecast
 
 # Constructor-time guard so we never accidentally register a mutating
@@ -65,6 +67,7 @@ class AgentDeps:
         memory_service: MemoryService,
         site_id: str,
         server: ServerClient,
+        device_api: DeviceApiClient,
     ) -> None:
         """Initialize deps.
 
@@ -72,12 +75,13 @@ class AgentDeps:
         the final AnalystMessage from prose + this list. `site_id` is
         baked into the deployment via the SITE_ID env var. `server` is
         the REST client over ems-analyst-server — agent reads telemetry
-        + forecasts through it (principle: agent is just another client
-        of server, same as HMI).
+        + forecasts through it. `device_api` is the client over
+        ems-device-api — the DTM (device topology) source of truth.
         """
         self.memory_service = memory_service
         self.site_id = site_id
         self.server = server
+        self.device_api = device_api
         self.artifacts: list[AnalystArtifact] = []
 
 
@@ -100,6 +104,7 @@ class Agent:
             embedder=embedder,
         )
         self.server = ServerClient()
+        self.device_api = DeviceApiClient()
 
         # MCP server reads its graph + vector backends from the parent process env
         # (GRAPH_URL or NEPTUNE_HOST+AOSS_HOST, plus VECTOR_URL). Compose
@@ -114,6 +119,7 @@ class Agent:
             Tool(get_weather_forecast),
             Tool(get_market_data),
             Tool(describe_site),
+            Tool(get_topology),
             Tool(query_timeseries),
             Tool(get_forecast),
             Tool(query_markets),
@@ -211,6 +217,7 @@ class Agent:
             memory_service=self.memory_service,
             site_id=self.site_id,
             server=self.server,
+            device_api=self.device_api,
         )
         result = await self.agent.run(
             prompt, deps=deps, message_history=message_history

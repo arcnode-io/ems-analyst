@@ -1,16 +1,16 @@
 """Site analytics builders — markets revenue + energy breakdown.
 
-Both read through ServerClient (no direct Postgres) per the principle
-"agent is just another client of server, same as HMI." Source attribution
-uses the topology module's HMI template inference.
+Values read through ServerClient. Device→category attribution comes
+from the DTM (DtmView) fetched from ems-device-api — the source of
+truth for which devices are BESS / grid / compute.
 """
 
 from datetime import UTC, datetime, timedelta
 from typing import Final, Literal
 
+from ..device_api import DtmView
 from ..schemas import AnalystArtifact, BarSpec, PieSpec
 from ..server_client import ServerClient
-from ..topology import category_of, devices_in_category
 from .telemetry import _error_artifact, _now
 
 _MARKET_DEVICE_ID: Final[str] = "market_01"
@@ -18,12 +18,6 @@ _DAM_PRICE_M: Final[str] = "dam_clearing_price_usd_per_mwh"
 _RTM_PRICE_M: Final[str] = "rtm_clearing_price_usd_per_mwh"
 _DAM_DISPATCH_M: Final[str] = "dam_dispatch_w"
 _RTM_DISPATCH_M: Final[str] = "rtm_dispatch_w"
-
-
-async def _bess_devices(client: ServerClient, site_id: str) -> list[str]:
-    """Distinct BESS devices at the site, per topology."""
-    desc = await client.describe_site(site_id=site_id)
-    return devices_in_category([p.device_id for p in desc.pairs], "bess")
 
 
 async def _bucketed_series(
@@ -59,16 +53,20 @@ def _revenue(
 
 async def build_markets(
     client: ServerClient,
+    dtm: DtmView,
     site_id: str,
     window: timedelta,
 ) -> AnalystArtifact:
-    """Revenue per market over the window. BarSpec with DAM + RTM bars."""
+    """Revenue per market over the window. BarSpec with DAM + RTM bars.
+
+    BESS devices come from the DTM (template == bess_module).
+    """
     end = datetime.now(UTC)
     start = end - window
-    bess = await _bess_devices(client, site_id)
+    bess = dtm.devices_in_category("bess")
     if not bess:
         return _error_artifact(
-            "not_found", f"No BESS dispatch found at site {site_id}."
+            "not_found", f"No BESS devices in the topology for {site_id}."
         )
     dam_price = await _bucketed_series(
         client, site_id, _MARKET_DEVICE_ID, _DAM_PRICE_M, start, end
@@ -106,11 +104,6 @@ async def build_markets(
     )
 
 
-def _integrate_kwh(series: dict[datetime, float]) -> float:
-    """Hourly bucket * power_w → kWh. Assumes 1h buckets."""
-    return sum(abs(v) for v in series.values()) / 1000.0
-
-
 async def _energy_per_device(
     client: ServerClient,
     site_id: str,
@@ -126,54 +119,50 @@ async def _energy_per_device(
         return sum(v for v in series.values() if v > 0) / 1000.0
     if sign_filter == "negative":
         return sum(-v for v in series.values() if v < 0) / 1000.0
-    return _integrate_kwh(series)
+    return sum(abs(v) for v in series.values()) / 1000.0
 
 
 async def build_energy_breakdown(
     client: ServerClient,
+    dtm: DtmView,
     site_id: str,
     window: timedelta,
     by: Literal["source", "destination"] = "source",
 ) -> AnalystArtifact:
     """Energy by source (or destination) over window. PieSpec.
 
-    Source convention (positive direction = into the site):
-    - BESS discharge (active_power > 0)
-    - Grid import (settlement_power > 0)
-
-    Destination (positive direction = out of the site):
-    - Compute load (active_power, always positive — a load)
-    - BESS charge (active_power < 0)
-    - Grid export (settlement_power < 0)
+    Device categories come from the DTM. Sign conventions:
+    - source: BESS discharge (active_power > 0), grid import
+      (settlement_power > 0).
+    - destination: compute load (active_power abs), BESS charge
+      (active_power < 0), grid export (settlement_power < 0).
     """
     end = datetime.now(UTC)
     start = end - window
-    desc = await client.describe_site(site_id=site_id)
-    device_ids = [p.device_id for p in desc.pairs]
     slices: list[dict[str, float | str]] = []
     if by == "source":
-        for dev in devices_in_category(device_ids, "bess"):
+        for dev in dtm.devices_in_category("bess"):
             kwh = await _energy_per_device(
                 client, site_id, dev, "active_power", start, end, "positive"
             )
             slices.append({"label": f"{dev} discharge", "value": round(kwh, 2)})
-        for dev in devices_in_category(device_ids, "grid_intertie"):
+        for dev in dtm.devices_in_category("grid_intertie"):
             kwh = await _energy_per_device(
                 client, site_id, dev, "settlement_power", start, end, "positive"
             )
             slices.append({"label": "Grid import", "value": round(kwh, 2)})
     else:
-        for dev in devices_in_category(device_ids, "compute_load"):
+        for dev in dtm.devices_in_category("compute_load"):
             kwh = await _energy_per_device(
                 client, site_id, dev, "active_power", start, end, "abs"
             )
             slices.append({"label": "Compute load", "value": round(kwh, 2)})
-        for dev in devices_in_category(device_ids, "bess"):
+        for dev in dtm.devices_in_category("bess"):
             kwh = await _energy_per_device(
                 client, site_id, dev, "active_power", start, end, "negative"
             )
             slices.append({"label": f"{dev} charge", "value": round(kwh, 2)})
-        for dev in devices_in_category(device_ids, "grid_intertie"):
+        for dev in dtm.devices_in_category("grid_intertie"):
             kwh = await _energy_per_device(
                 client, site_id, dev, "settlement_power", start, end, "negative"
             )
@@ -181,9 +170,6 @@ async def build_energy_breakdown(
     # Drop zero slices to keep the pie readable.
     slices = [s for s in slices if isinstance(s["value"], float) and s["value"] > 0]
     if not slices:
-        # Reason: category_of(...) was used so this can't fall through silently
-        # — surface to the LLM so it conveys "no data" rather than empty pie.
-        _ = category_of  # keep import referenced for the docstring above
         return _error_artifact(
             "not_found", f"No energy {by} data over the last {window}."
         )

@@ -8,6 +8,7 @@ from typing import Literal
 
 from pydantic_ai import RunContext
 
+from ..device_api import DeviceApiClient
 from ..server_client import ServerClient
 from .site_analytics import build_energy_breakdown, build_markets
 from .telemetry import (
@@ -87,8 +88,11 @@ async def query_markets(
     """
     td = _parse_window(window)
     client = ctx.deps.server
+    device_api = ctx.deps.device_api
     assert isinstance(client, ServerClient)
-    art = await build_markets(client, ctx.deps.site_id, td)
+    assert isinstance(device_api, DeviceApiClient)
+    dtm = await device_api.get_topology()
+    art = await build_markets(client, dtm, ctx.deps.site_id, td)
     ctx.deps.artifacts.append(art)
     if art.kind == "error":
         return f"No market dispatch data over {window}."
@@ -112,8 +116,11 @@ async def query_energy_breakdown(
     """
     td = _parse_window(window)
     client = ctx.deps.server
+    device_api = ctx.deps.device_api
     assert isinstance(client, ServerClient)
-    art = await build_energy_breakdown(client, ctx.deps.site_id, td, by)
+    assert isinstance(device_api, DeviceApiClient)
+    dtm = await device_api.get_topology()
+    art = await build_energy_breakdown(client, dtm, ctx.deps.site_id, td, by)
     ctx.deps.artifacts.append(art)
     if art.kind == "error":
         return f"No energy {by} data over {window}."
