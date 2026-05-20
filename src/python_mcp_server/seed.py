@@ -474,17 +474,18 @@ async def seed_graph_neptune(graph: NeptuneGraph) -> None:
     logger.info("graph (neptune) slice seeded")
 
 
-def e2e_seed_url(url: str | None, e2e: bool) -> str | None:
-    """Swap a production seed artifact for its small `-e2e` variant.
+def e2e_graph_seed_url(url: str | None, e2e: bool) -> str | None:
+    """Swap the graph cypher dump for its small `-e2e` variant.
 
-    cfg.e2e=true deployments seed from `<name>-e2e.<ext>` — same
-    apoc/pg_dump format, tens of nodes not thousands — so the customer
-    seed path runs fast + deterministic in CI without the 96MB restore.
-    Production (e2e=false) keeps the full artifact untouched.
+    cfg.e2e=true deployments seed graph from `graph-neo4j-e2e.cypher.gz`
+    — 153 nodes, ~40s — so the customer seed path runs fast +
+    deterministic in CI without the 96MB / one-mega-tx restore.
+    Production (e2e=false) keeps the full artifact. Only graph has an
+    e2e fixture today; the 25MB vector dump restores full either way.
     """
     if url is None or not e2e:
         return url
-    return url.replace(".cypher.gz", "-e2e.cypher.gz").replace(".sql.gz", "-e2e.sql.gz")
+    return url.replace(".cypher.gz", "-e2e.cypher.gz")
 
 
 async def seed_all(

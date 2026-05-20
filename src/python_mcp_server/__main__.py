@@ -18,7 +18,7 @@ import asyncio
 import sys
 
 from .config import load_config, setup_logger
-from .seed import e2e_seed_url, seed_all
+from .seed import e2e_graph_seed_url, seed_all
 from .server import create_server
 
 
@@ -33,14 +33,16 @@ async def _serve() -> None:
 async def _seed() -> None:
     """One-shot seed — runs to completion, writes markers, exits.
 
-    cfg.e2e=true → seed from the small `-e2e` fixtures (fast, deterministic
-    CI); false → the full production artifacts.
+    cfg.e2e=true → seed graph from the small `-e2e` fixture (fast,
+    deterministic CI); false → the full production artifact.
     """
     config = load_config()
     setup_logger(config)
     await seed_all(
-        vector_url=e2e_seed_url(config.settings.vector_seed_url, config.e2e),
-        graph_neo4j_url=e2e_seed_url(config.settings.graph_neo4j_seed_url, config.e2e),
+        vector_url=config.settings.vector_seed_url,
+        graph_neo4j_url=e2e_graph_seed_url(
+            config.settings.graph_neo4j_seed_url, config.e2e
+        ),
         graph=config.graph,
     )
 
