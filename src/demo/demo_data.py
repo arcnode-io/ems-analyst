@@ -1,9 +1,9 @@
-"""ENV=demo CSV-backed mock for the measurement-derived endpoints.
+"""ENV=demo CSV-backed mock for /measurements.
 
-When ENV=demo, /measurements, /devices, /description are served from a
-bundled CSV in memory — the CSV pretends to be the DB. No Postgres
-measurements table, no seeding. The CSV ships in the ems-analyst-agent
-package (demo_data/measurements.csv).
+When ENV=demo, /measurements is served from a bundled CSV in memory —
+the CSV pretends to be the DB. No Postgres measurements table, no
+seeding. The CSV ships in the ems-analyst-agent package
+(demo_data/measurements.csv).
 
 forecasts stays on real Postgres — that's model output, not mock data.
 
@@ -19,8 +19,6 @@ from datetime import UTC, datetime, timedelta
 from importlib import resources
 from typing import Final
 
-from src.description.dto import MeasurementPair, SiteDescription
-from src.devices.dto import DeviceList, DeviceRow
 from src.measurements.dto import Aggregation, MeasurementPoint, MeasurementSeries
 
 log = logging.getLogger(__name__)
@@ -65,9 +63,8 @@ class _Row:
 class DemoData:
     """In-memory CSV-backed stand-in for the measurements DB.
 
-    One instance is shared across the measurements/devices/description
-    controllers in ENV=demo — duck-typed: it exposes get/list/describe
-    with the same signatures the real services do.
+    Injected into the measurements controller in ENV=demo — duck-typed:
+    it exposes `get` with the same signature MeasurementsService does.
     """
 
     def __init__(self) -> None:
@@ -142,43 +139,3 @@ class DemoData:
             unit=unit,
             points=points,
         )
-
-    async def list(self, site_id: str, status: list[str] | None = None) -> DeviceList:
-        """Distinct devices + latest 'status' measurement — mirrors DevicesService."""
-        latest_status: dict[str, tuple[datetime, str]] = {}
-        devices: set[str] = set()
-        for row in self._rows:
-            if row.site_id != site_id:
-                continue
-            devices.add(row.device_id)
-            if row.measurement == "status":
-                prev = latest_status.get(row.device_id)
-                if prev is None or row.ts > prev[0]:
-                    latest_status[row.device_id] = (
-                        row.ts,
-                        str(json.loads(row.value)),
-                    )
-        rows = [
-            DeviceRow(
-                device_id=d,
-                status=latest_status[d][1] if d in latest_status else None,
-            )
-            for d in sorted(devices)
-        ]
-        if status:
-            rows = [r for r in rows if r.status in status]
-        return DeviceList(site_id=site_id, devices=rows)
-
-    async def describe(self, site_id: str) -> SiteDescription:
-        """(device, measurement, sample-count) inventory — mirrors DescriptionService."""
-        counts: dict[tuple[str, str], int] = {}
-        for row in self._rows:
-            if row.site_id != site_id:
-                continue
-            key = (row.device_id, row.measurement)
-            counts[key] = counts.get(key, 0) + 1
-        pairs = [
-            MeasurementPair(device_id=dev, measurement=meas, samples=n)
-            for (dev, meas), n in sorted(counts.items())
-        ]
-        return SiteDescription(site_id=site_id, pairs=pairs)

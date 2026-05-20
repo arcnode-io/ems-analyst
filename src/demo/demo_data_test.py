@@ -1,7 +1,7 @@
 """Unit tests for DemoData — CSV-backed mock for ENV=demo.
 
 Pure: reads the bundled CSV from the ems-analyst-agent package, no DB.
-Asserts the three query methods return correctly-shaped DTOs.
+Asserts `get` returns a correctly-shaped MeasurementSeries.
 """
 
 from datetime import UTC, datetime, timedelta
@@ -17,47 +17,6 @@ _SITE: str = "demo-site"
 def demo() -> DemoData:
     """Parse the bundled demo CSV once for the module."""
     return DemoData()
-
-
-class TestDemoDataDescribe:
-    @pytest.mark.asyncio
-    async def test_describe_lists_known_devices(self, demo: DemoData) -> None:
-        # Act
-        actual = await demo.describe(_SITE)
-
-        # Assert — HMI device set is present
-        devices = {p.device_id for p in actual.pairs}
-        assert "bess_module_01" in devices
-        assert "compute_module_01" in devices
-        assert "revenue_meter_01" in devices
-
-    @pytest.mark.asyncio
-    async def test_describe_unknown_site_empty(self, demo: DemoData) -> None:
-        # Act
-        actual = await demo.describe("no-such-site")
-
-        # Assert
-        assert actual.pairs == []
-
-
-class TestDemoDataDevices:
-    @pytest.mark.asyncio
-    async def test_list_returns_devices_with_status(self, demo: DemoData) -> None:
-        # Act
-        actual = await demo.list(_SITE)
-
-        # Assert
-        by_id = {d.device_id: d for d in actual.devices}
-        assert "bess_module_01" in by_id
-
-    @pytest.mark.asyncio
-    async def test_list_status_filter_narrows(self, demo: DemoData) -> None:
-        # Act
-        all_devs = await demo.list(_SITE)
-        oks = await demo.list(_SITE, status=["ok"])
-
-        # Assert — filter never widens
-        assert len(oks.devices) <= len(all_devs.devices)
 
 
 class TestDemoDataMeasurements:
