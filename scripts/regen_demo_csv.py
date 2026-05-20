@@ -29,6 +29,8 @@ import psycopg2
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
 
+# MUST match cfg.defaults.yml demo block's site_id — the agent queries
+# server with config.site_id, so the seeded rows have to carry the same.
 _SITE_ID: Final[str] = "demo-site"
 _OUTPUT_CSV: Final[Path] = (
     Path(__file__).resolve().parents[1]
