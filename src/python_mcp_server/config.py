@@ -90,7 +90,10 @@ class StageConfig(BaseModel):
     """One stage block in cfg.defaults.yml after customer merge."""
 
     log_level: LogLevel
-    e2e: bool = False  # tests-only: false → pook mocks HTTP; true → real services
+    # e2e test deployment marker. false → pook mocks HTTP (unit/integration)
+    # + seed pulls the full production artifact. true → real services +
+    # seed pulls the small `-e2e` fixture (fast, deterministic CI).
+    e2e: bool = False
     settings: ProviderSettings
     graph: GraphConfig
 

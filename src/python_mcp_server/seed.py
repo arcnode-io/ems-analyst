@@ -30,13 +30,14 @@ import os
 import time
 import urllib.request
 from collections.abc import Iterator
+from typing import Final
 
 import asyncpg
 import boto3
 import httpx
 from botocore.auth import SigV4Auth
 from botocore.awsrequest import AWSRequest
-from neo4j import AsyncGraphDatabase, AsyncManagedTransaction
+from neo4j import AsyncGraphDatabase, AsyncManagedTransaction, AsyncSession
 
 from .clients.graphiti_client import _split_neo4j_url
 from .config import Neo4jGraph, NeptuneGraph, NoneGraph
@@ -153,12 +154,74 @@ async def seed_vector(seed_url: str) -> None:
         await conn.close()
 
 
+# apoc.export.cypher.all emits schema DDL (CREATE/DROP CONSTRAINT|INDEX)
+# interleaved with data writes. Neo4j forbids mixing the two in one
+# transaction — schema statements run in their own auto-commit tx; data
+# statements batch into managed write transactions.
+_SCHEMA_STMT_PREFIXES: Final[tuple[str, ...]] = (
+    "CREATE CONSTRAINT",
+    "DROP CONSTRAINT",
+    "CREATE INDEX",
+    "DROP INDEX",
+    "CREATE RANGE INDEX",
+    "CREATE TEXT INDEX",
+    "CREATE POINT INDEX",
+    "CREATE FULLTEXT INDEX",
+    "CREATE VECTOR INDEX",
+)
+
+
+def _is_schema_statement(stmt: str) -> bool:
+    """True if `stmt` is a Neo4j schema (DDL) command."""
+    head = stmt.lstrip().upper()
+    return head.startswith(_SCHEMA_STMT_PREFIXES)
+
+
+# apoc emits ~1900 data statements averaging ~245KB each — the full set
+# in one transaction is ~465MB and exceeds Aura's tx-memory ceiling.
+# 50/tx keeps each transaction ~12MB. Test fixtures are 2-3 statements,
+# so they still flush as a single batch (rollback semantics preserved).
+_DATA_BATCH_SIZE: Final[int] = 50
+
+
+async def _wipe_graph(session: AsyncSession) -> None:
+    """Drop every constraint, index, and node — clean slate before a load.
+
+    The marker is written last; a marker-absent graph is therefore either
+    empty or the debris of a failed run. apoc's schema DDL has no
+    IF NOT EXISTS, so leftover constraints/indexes would collide on the
+    retry. Wiping first makes the seed idempotent.
+    """
+    # Constraints before indexes — dropping a constraint drops its
+    # backing index, so this avoids a double-drop error.
+    for kind in ("CONSTRAINTS", "INDEXES"):
+        result = await session.run(f"SHOW {kind} YIELD name RETURN name")
+        names = [rec["name"] for rec in await result.data()]
+        drop = "CONSTRAINT" if kind == "CONSTRAINTS" else "INDEX"
+        for name in names:
+            # name comes from SHOW output (our own graph), not user input;
+            # backticked. ty flags the f-string as non-LiteralString.
+            await session.run(
+                f"DROP {drop} `{name}` IF EXISTS"  # ty: ignore[invalid-argument-type]
+            )
+    # Batched node delete — a big partial graph would blow tx memory.
+    await session.run(
+        "MATCH (n) CALL (n) { DETACH DELETE n } IN TRANSACTIONS OF 10000 ROWS"
+    )
+
+
 async def seed_graph_neo4j(seed_url: str) -> None:
     """Restore cypher dump into GRAPH_URL Neo4j if marker absent.
 
-    Restore + marker write run in one managed transaction via
-    session.execute_write — partial failure rolls back so a retry
-    starts from a clean state.
+    Marker absent → the graph is wiped first (a failed prior run leaves
+    schema debris apoc's no-IF-NOT-EXISTS DDL would collide with).
+
+    Data statements commit in batches of _DATA_BATCH_SIZE managed write
+    transactions — a failure within a batch rolls that batch back.
+    Schema statements (constraints/indexes) run in their own auto-commit
+    transactions; Neo4j rejects schema + write in one tx. Statement order
+    is preserved: apoc emits CREATE CONSTRAINT before the bulk load,
+    DROP after it.
     """
     uri, user, password = _split_neo4j_url(os.environ["GRAPH_URL"])
     if user is None or password is None:
@@ -177,20 +240,42 @@ async def seed_graph_neo4j(seed_url: str) -> None:
         cypher_script = _fetch_gunzip(seed_url)
         statements = [s.strip() for s in cypher_script.split(";\n") if s.strip()]
 
-        async def _restore(tx: AsyncManagedTransaction) -> None:
+        async with driver.session() as session:
+            await _wipe_graph(session)
+            data_batch: list[str] = []
+
+            async def _flush_data() -> None:
+                """Commit the accumulated data statements as one write tx."""
+                if not data_batch:
+                    return
+                pending = list(data_batch)
+                data_batch.clear()
+
+                async def _write(tx: AsyncManagedTransaction) -> None:
+                    for stmt in pending:
+                        # Reason: stmt is from our own dump file — driver's
+                        # LiteralString constraint guards user input, not a
+                        # controlled artifact.
+                        await tx.run(stmt)  # ty: ignore[invalid-argument-type]
+
+                await session.execute_write(_write)
+
             for stmt in statements:
-                # Reason: stmt is from our own dump file — driver's
-                # LiteralString constraint is for user-input safety,
-                # doesn't apply to a controlled artifact.
-                await tx.run(stmt)  # ty: ignore[invalid-argument-type]
-            await tx.run(
+                if _is_schema_statement(stmt):
+                    await _flush_data()
+                    # Auto-commit: schema DDL can't share a tx with writes.
+                    await session.run(stmt)  # ty: ignore[invalid-argument-type]
+                else:
+                    data_batch.append(stmt)
+                    if len(data_batch) >= _DATA_BATCH_SIZE:
+                        await _flush_data()
+            await _flush_data()
+
+            await session.run(
                 "MERGE (m:ArcnodeSeedMarker {slice: $slice}) "
                 "ON CREATE SET m.seeded_at = datetime()",
                 slice=GRAPH_MARKER_SLICE,
             )
-
-        async with driver.session() as session:
-            await session.execute_write(_restore)
         logger.info("graph slice seeded")
     finally:
         await driver.close()
@@ -387,6 +472,19 @@ async def seed_graph_neptune(graph: NeptuneGraph) -> None:
     await _populate_aoss_indexes(graph)
     await _neptune_write_marker(graph.neptune_host)
     logger.info("graph (neptune) slice seeded")
+
+
+def e2e_seed_url(url: str | None, e2e: bool) -> str | None:
+    """Swap a production seed artifact for its small `-e2e` variant.
+
+    cfg.e2e=true deployments seed from `<name>-e2e.<ext>` — same
+    apoc/pg_dump format, tens of nodes not thousands — so the customer
+    seed path runs fast + deterministic in CI without the 96MB restore.
+    Production (e2e=false) keeps the full artifact untouched.
+    """
+    if url is None or not e2e:
+        return url
+    return url.replace(".cypher.gz", "-e2e.cypher.gz").replace(".sql.gz", "-e2e.sql.gz")
 
 
 async def seed_all(
