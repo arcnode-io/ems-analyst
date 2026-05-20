@@ -78,8 +78,8 @@ class TestMeasurementsRoute:
             params={
                 "device_id": "device-1",
                 "measurement": "power_kw",
-                "start": "2026-05-17T00:00:00Z",
-                "end": "2026-05-18T00:00:00Z",
+                "start": int(datetime(2026, 5, 17, tzinfo=UTC).timestamp()),
+                "end": int(datetime(2026, 5, 18, tzinfo=UTC).timestamp()),
             },
         )
 
@@ -106,8 +106,8 @@ class TestMeasurementsRoute:
             params={
                 "device_id": "device-2",
                 "measurement": "energy_kwh",
-                "start": "2026-05-17T00:00:00Z",
-                "end": "2026-05-18T00:00:00Z",
+                "start": int(datetime(2026, 5, 17, tzinfo=UTC).timestamp()),
+                "end": int(datetime(2026, 5, 18, tzinfo=UTC).timestamp()),
             },
         )
 
@@ -126,8 +126,8 @@ class TestMeasurementsRoute:
             params={
                 "device_id": "device-3",
                 "measurement": "soc",
-                "start": "2026-05-17T00:00:00Z",
-                "end": "2026-05-18T00:00:00Z",
+                "start": int(datetime(2026, 5, 17, tzinfo=UTC).timestamp()),
+                "end": int(datetime(2026, 5, 18, tzinfo=UTC).timestamp()),
                 "aggregation": "last",
             },
         )

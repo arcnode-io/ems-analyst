@@ -1,6 +1,6 @@
 """GET /sites/{site_id}/measurements — hourly-bucketed timeseries reads."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from classy_fastapi import Routable, get
 
@@ -26,16 +26,20 @@ class MeasurementsController(Routable):
         site_id: str,
         device_id: str,
         measurement: str,
-        start: datetime,
-        end: datetime,
+        start: int,
+        end: int,
         aggregation: Aggregation = "mean",
     ) -> MeasurementSeries:
-        """Return bucketed (ts, value|None) points for the site+device."""
+        """Return bucketed (ts, value|None) points for the site+device.
+
+        ``start`` + ``end`` are Unix epoch seconds (UTC). Integers avoid
+        the ISO-datetime `+` → space URL-encoding footgun.
+        """
         return await self.service.get(
             site_id=site_id,
             device_id=device_id,
             measurement=measurement,
-            start=start,
-            end=end,
+            start=datetime.fromtimestamp(start, tz=UTC),
+            end=datetime.fromtimestamp(end, tz=UTC),
             aggregation=aggregation,
         )
