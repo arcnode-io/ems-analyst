@@ -1,20 +1,15 @@
 """Telemetry builders — Pydantic artifact factories backed by ServerClient.
 
-`build_timeseries`, `build_device_list`, `build_site_description` read
-through ems-analyst-server's REST API. Markets revenue + energy
-breakdown live in `site_analytics.py`. RunContext wrappers in
-`telemetry_tools.py`.
+`build_timeseries` reads through ems-analyst-server's REST API. Markets
+revenue + energy breakdown live in `site_analytics.py`. RunContext
+wrappers in `telemetry_tools.py`.
 """
 
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
-from ..schemas import (
-    AnalystArtifact,
-    LineSpec,
-    TableSpec,
-)
+from ..schemas import AnalystArtifact, LineSpec
 from ..server_client import Aggregation, ServerClient
 
 
@@ -101,67 +96,4 @@ async def build_timeseries(
     )
     return AnalystArtifact.model_validate(
         {"kind": "line", "spec": spec.model_dump(by_alias=True)}
-    )
-
-
-async def build_site_description(client: ServerClient) -> AnalystArtifact:
-    """Distinct (device, measurement) pairs at the site — registry as a table."""
-    desc = await client.describe_site()
-    if not desc.pairs:
-        return _error_artifact(
-            "not_found", "No measurements published for this site yet."
-        )
-    rows: list[dict[str, str | int]] = [
-        {
-            "device": p.device_id,
-            "measurement": p.measurement,
-            "samples": p.samples,
-        }
-        for p in desc.pairs
-    ]
-    spec = TableSpec.model_validate(
-        {
-            "title": "Available data at this site",
-            "columns": [
-                {"key": "device", "label": "Device"},
-                {"key": "measurement", "label": "Measurement"},
-                {"key": "samples", "label": "Samples", "align": "right"},
-            ],
-            "rows": rows,
-            "dataAsOf": _now(),
-        }
-    )
-    return AnalystArtifact.model_validate(
-        {"kind": "table", "spec": spec.model_dump(by_alias=True)}
-    )
-
-
-async def build_device_list(
-    client: ServerClient,
-    status: list[str] | None = None,
-) -> AnalystArtifact:
-    """Distinct device_ids at the site with their latest status."""
-    devs = await client.list_devices(status=status)
-    rows: list[dict[str, str | None]] = [
-        {"device": d.device_id, "status": d.status} for d in devs.devices
-    ]
-    spec = TableSpec.model_validate(
-        {
-            "title": (
-                f"Devices at site (status={','.join(status) if status else 'any'})"
-            ),
-            "columns": [
-                {"key": "device", "label": "Device"},
-                {"key": "status", "label": "Status"},
-            ],
-            "rows": rows,
-            "rowSeverity": [
-                d.status if d.status in ("ok", "warn", "alarm") else None
-                for d in devs.devices
-            ],
-            "dataAsOf": _now(),
-        }
-    )
-    return AnalystArtifact.model_validate(
-        {"kind": "table", "spec": spec.model_dump(by_alias=True)}
     )

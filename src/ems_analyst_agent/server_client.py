@@ -1,8 +1,8 @@
 """HTTP client over ems-analyst-server's deterministic REST endpoints.
 
-Principle: the agent is just another client of server, same as HMI. All
-historian + forecast reads route through these four endpoints rather
-than touching Postgres directly.
+Principle: the agent is just another client of server, same as HMI.
+Historian + forecast reads route through /measurements and /forecast
+rather than touching Postgres directly.
 
 DTOs mirror server's response shapes — defined here to avoid a cycle
 (server imports the agent for /chat).
@@ -41,35 +41,6 @@ class MeasurementSeries(BaseModel):
     points: list[MeasurementPoint]
 
 
-class DeviceRow(BaseModel):
-    """One device + its latest status (None if never reported)."""
-
-    device_id: str
-    status: str | None
-
-
-class DeviceList(BaseModel):
-    """Distinct devices at a site."""
-
-    site_id: str
-    devices: list[DeviceRow]
-
-
-class MeasurementPair(BaseModel):
-    """One (device, measurement) pair + sample count at the site."""
-
-    device_id: str
-    measurement: str
-    samples: int
-
-
-class SiteDescription(BaseModel):
-    """Inventory of what's published at a site."""
-
-    site_id: str
-    pairs: list[MeasurementPair]
-
-
 class ForecastPoint(BaseModel):
     """One (forecast_for, value) prediction."""
 
@@ -99,7 +70,7 @@ def _iso_z(ts: datetime) -> str:
 
 
 class ServerClient:
-    """REST client for the four server data endpoints."""
+    """REST client for the /measurements and /forecast server endpoints."""
 
     def __init__(self, base_url: str | None = None) -> None:
         """Optional URL override for tests; production reads SERVER_URL."""
@@ -131,23 +102,6 @@ class ServerClient:
             )
             resp.raise_for_status()
         return MeasurementSeries.model_validate(resp.json())
-
-    async def list_devices(self, status: list[str] | None = None) -> DeviceList:
-        """GET /devices — distinct devices + latest status."""
-        params: list[tuple[str, str | int | float | None]] = []
-        if status:
-            params.extend(("status", s) for s in status)
-        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as c:
-            resp = await c.get(f"{self.base_url}/devices", params=params)
-            resp.raise_for_status()
-        return DeviceList.model_validate(resp.json())
-
-    async def describe_site(self) -> SiteDescription:
-        """GET /description — inventory of (device, measurement) pairs."""
-        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as c:
-            resp = await c.get(f"{self.base_url}/description")
-            resp.raise_for_status()
-        return SiteDescription.model_validate(resp.json())
 
     async def get_forecast(
         self,

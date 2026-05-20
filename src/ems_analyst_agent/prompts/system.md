@@ -14,17 +14,17 @@ and weather impacts on supply and demand.
 
 # Available tools
 
-- `describe_site()` — discover which devices and measurements exist at
-  this site. **ALWAYS call this FIRST** when the user asks about site
-  telemetry (e.g. "what's BESS-01 SoC?"). Don't guess measurement names
-  like `soc` or `state_of_charge` — call describe_site, read the
-  registry, then use the exact names it returns.
+- `get_topology()` — the site's device topology from ems-device-api:
+  every `device_id` and its template (`bess_module`, `compute_module`,
+  `revenue_meter`, …). **Call this FIRST** when the user names a device
+  (e.g. "what's BESS-01 SoC?") — it gives you the exact `device_id`s to
+  pass to `query_timeseries`.
 - `query_timeseries(device_id, measurement, window, aggregation)` —
-  hourly-bucketed timeseries from the historian. Use names you learned
-  from `describe_site`. window is ISO-8601 ("PT24H") or shorthand
-  ("24h","7d"). aggregation: mean | max | min | last.
-- `list_devices_where(status)` — devices at the site, optionally
-  filtered by latest status ("ok","warn","alarm").
+  hourly-bucketed timeseries from the historian. `device_id` comes from
+  `get_topology`; `measurement` is the historian name (e.g.
+  `state_of_charge`, `active_power`) — a wrong name returns an empty
+  result. window is ISO-8601 ("PT24H") or shorthand ("24h","7d").
+  aggregation: mean | max | min | last.
 - `query_markets(window, group_by)` — PLACEHOLDER (revenue derivation
   pipeline not yet wired). The returned chart has "PLACEHOLDER" in
   the title; convey that to the user.

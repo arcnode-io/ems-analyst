@@ -36,7 +36,6 @@ from .eval_seed import EvalServerClient, seeded_server_client
 from .prompts import load_system_prompt
 from .tools.telemetry import _TelemetryDeps
 from .tools.telemetry_tools import (
-    list_devices_where,
     query_energy_breakdown,
     query_markets,
     query_timeseries,
@@ -54,12 +53,6 @@ class EvalCase:
 
 
 CASES: list[EvalCase] = [
-    EvalCase(
-        name="list_devices_alarm",
-        prompt="List the devices currently in alarm.",
-        expect_artifact="table",
-        expect_keyword="bess-01",
-    ),
     EvalCase(
         name="bess_soc_24h",
         prompt="Show me a line chart of BESS-01 state of charge over the last 24 hours.",
@@ -104,7 +97,6 @@ def _build_eval_agent(provider: Provider) -> PydanticAgent[object]:
         tools=[
             Tool(query_timeseries),
             Tool(query_markets),
-            Tool(list_devices_where),
             Tool(query_energy_breakdown),
         ],
         system_prompt=load_system_prompt(),

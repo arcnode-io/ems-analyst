@@ -23,8 +23,6 @@ from .tools.domain_mcp import create_mcp_server
 from .tools.forecast import get_forecast
 from .tools.markets import get_market_data
 from .tools.telemetry_tools import (
-    describe_site,
-    list_devices_where,
     query_energy_breakdown,
     query_markets,
     query_timeseries,
@@ -116,12 +114,10 @@ class Agent:
         tools = [
             Tool(get_weather_forecast),
             Tool(get_market_data),
-            Tool(describe_site),
             Tool(get_topology),
             Tool(query_timeseries),
             Tool(get_forecast),
             Tool(query_markets),
-            Tool(list_devices_where),
             Tool(query_energy_breakdown),
         ]
         _assert_read_only(tools)  # ty: ignore[invalid-argument-type]

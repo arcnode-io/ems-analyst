@@ -46,7 +46,6 @@ from .prompts import load_system_prompt
 from .tools.domain_mcp import create_mcp_server
 from .tools.telemetry import _TelemetryDeps
 from .tools.telemetry_tools import (
-    list_devices_where,
     query_energy_breakdown,
     query_markets,
     query_timeseries,
@@ -128,7 +127,6 @@ async def run_with_mcp(provider: Provider, server: EvalServerClient) -> Provider
             tools=[
                 Tool(query_timeseries),
                 Tool(query_markets),
-                Tool(list_devices_where),
                 Tool(query_energy_breakdown),
             ],
             toolsets=[mcp_server],

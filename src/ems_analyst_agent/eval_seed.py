@@ -24,14 +24,10 @@ import asyncpg
 
 from .server_client import (
     Aggregation,
-    DeviceList,
-    DeviceRow,
     ForecastSeries,
-    MeasurementPair,
     MeasurementPoint,
     MeasurementSeries,
     ServerClient,
-    SiteDescription,
 )
 
 log = logging.getLogger(__name__)
@@ -114,67 +110,6 @@ class EvalServerClient(ServerClient):
             measurement=measurement,
             unit=unit,
             points=points,
-        )
-
-    async def list_devices(self, status: list[str] | None = None) -> DeviceList:
-        """Distinct devices + latest status — mirrors DevicesService SQL."""
-        sql = """
-            WITH latest_status AS (
-                SELECT DISTINCT ON (device_id)
-                       device_id, (value::text) AS status
-                FROM measurements
-                WHERE site_id = $1 AND measurement = 'status'
-                ORDER BY device_id, ts DESC
-            )
-            SELECT DISTINCT m.device_id, ls.status
-            FROM measurements m
-            LEFT JOIN latest_status ls ON ls.device_id = m.device_id
-            WHERE m.site_id = $1
-            ORDER BY m.device_id
-        """
-        conn = await asyncpg.connect(self._postgres_url)
-        try:
-            rows = await conn.fetch(sql, EVAL_SITE_ID)
-        finally:
-            await conn.close()
-
-        def _strip(s: str | None) -> str | None:
-            if s is None:
-                return None
-            v = str(s)
-            return v[1:-1] if v.startswith('"') and v.endswith('"') else v
-
-        devices = [
-            DeviceRow(device_id=str(r["device_id"]), status=_strip(r["status"]))
-            for r in rows
-        ]
-        if status:
-            devices = [d for d in devices if d.status in status]
-        return DeviceList(site_id=EVAL_SITE_ID, devices=devices)
-
-    async def describe_site(self) -> SiteDescription:
-        """(device, measurement, samples) inventory — mirrors DescriptionService."""
-        conn = await asyncpg.connect(self._postgres_url)
-        try:
-            rows = await conn.fetch(
-                "SELECT device_id, measurement, COUNT(*) AS samples "
-                "FROM measurements WHERE site_id = $1 "
-                "GROUP BY device_id, measurement "
-                "ORDER BY device_id, measurement",
-                EVAL_SITE_ID,
-            )
-        finally:
-            await conn.close()
-        return SiteDescription(
-            site_id=EVAL_SITE_ID,
-            pairs=[
-                MeasurementPair(
-                    device_id=str(r["device_id"]),
-                    measurement=str(r["measurement"]),
-                    samples=int(r["samples"]),
-                )
-                for r in rows
-            ],
         )
 
     async def get_forecast(

@@ -2,58 +2,29 @@
 
 ServerClient HTTP behaviour itself is pook-tested in
 tests/test_server_client.py; these tests exercise the artifact-shaping
-logic in build_timeseries / build_site_description / build_device_list.
+logic in build_timeseries.
 """
 
 from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from ..schemas import LineSpec, TableSpec
-from ..server_client import (
-    DeviceList,
-    DeviceRow,
-    MeasurementPair,
-    MeasurementPoint,
-    MeasurementSeries,
-    SiteDescription,
-)
-from .telemetry import (
-    _parse_window,
-    build_device_list,
-    build_site_description,
-    build_timeseries,
-)
+from ..schemas import LineSpec
+from ..server_client import MeasurementPoint, MeasurementSeries
+from .telemetry import _parse_window, build_timeseries
 
 
 class _FakeServerClient:
-    """Returns canned ServerClient responses; records calls."""
+    """Returns a canned MeasurementSeries; records calls."""
 
-    def __init__(
-        self,
-        measurements: MeasurementSeries | None = None,
-        devices: DeviceList | None = None,
-        description: SiteDescription | None = None,
-    ) -> None:
+    def __init__(self, measurements: MeasurementSeries | None = None) -> None:
         self._measurements = measurements
-        self._devices = devices
-        self._description = description
         self.calls: list[tuple[str, dict[str, object]]] = []
 
     async def get_measurements(self, **kwargs: object) -> MeasurementSeries:
         self.calls.append(("get_measurements", kwargs))
         assert self._measurements is not None
         return self._measurements
-
-    async def list_devices(self, **kwargs: object) -> DeviceList:
-        self.calls.append(("list_devices", kwargs))
-        assert self._devices is not None
-        return self._devices
-
-    async def describe_site(self, **kwargs: object) -> SiteDescription:
-        self.calls.append(("describe_site", kwargs))
-        assert self._description is not None
-        return self._description
 
 
 class TestParseWindow:
@@ -129,69 +100,3 @@ class TestBuildTimeseries:
 
         # Assert
         assert art.kind == "error"
-
-
-class TestBuildSiteDescription:
-    """AAA — shapes a TableSpec from SiteDescription."""
-
-    @pytest.mark.asyncio
-    async def test_renders_table_from_pairs(self) -> None:
-        # Arrange
-        desc = SiteDescription(
-            site_id="site-E",
-            pairs=[
-                MeasurementPair(device_id="BESS-01", measurement="soc", samples=24),
-            ],
-        )
-        fake = _FakeServerClient(description=desc)
-
-        # Act
-        art = await build_site_description(
-            fake,  # ty: ignore[invalid-argument-type]
-        )
-
-        # Assert
-        assert art.kind == "table"
-        assert isinstance(art.spec, TableSpec)
-        assert len(art.spec.rows) == 1
-
-    @pytest.mark.asyncio
-    async def test_empty_pairs_returns_error_artifact(self) -> None:
-        # Arrange
-        desc = SiteDescription(site_id="site-nope", pairs=[])
-        fake = _FakeServerClient(description=desc)
-
-        # Act
-        art = await build_site_description(
-            fake,  # ty: ignore[invalid-argument-type]
-        )
-
-        # Assert
-        assert art.kind == "error"
-
-
-class TestBuildDeviceList:
-    """AAA — shapes a TableSpec from DeviceList; optional status filter."""
-
-    @pytest.mark.asyncio
-    async def test_renders_table_with_status_severity(self) -> None:
-        # Arrange
-        devs = DeviceList(
-            site_id="site-D",
-            devices=[
-                DeviceRow(device_id="BESS-01", status="ok"),
-                DeviceRow(device_id="INV-02", status=None),
-            ],
-        )
-        fake = _FakeServerClient(devices=devs)
-
-        # Act
-        art = await build_device_list(
-            fake,  # ty: ignore[invalid-argument-type]
-            status=None,
-        )
-
-        # Assert
-        assert art.kind == "table"
-        assert isinstance(art.spec, TableSpec)
-        assert len(art.spec.rows) == 2

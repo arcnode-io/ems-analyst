@@ -21,7 +21,6 @@ LOCAL_TOOL_NAMES: frozenset[str] = frozenset(
         "get_energy_news",
         "query_timeseries",
         "query_markets",
-        "list_devices_where",
         "query_energy_breakdown",
     }
 )
