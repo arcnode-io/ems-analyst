@@ -95,7 +95,6 @@ class TestBuildTimeseries:
         # Act
         art = await build_timeseries(
             fake,  # ty: ignore[invalid-argument-type]
-            site_id="site-A",
             device_id="BESS-01",
             measurement="power_kw",
             window=timedelta(hours=2),
@@ -122,7 +121,6 @@ class TestBuildTimeseries:
         # Act
         art = await build_timeseries(
             fake,  # ty: ignore[invalid-argument-type]
-            site_id="site-A",
             device_id="BESS-01",
             measurement="power_kw",
             window=timedelta(hours=1),
@@ -150,7 +148,6 @@ class TestBuildSiteDescription:
         # Act
         art = await build_site_description(
             fake,  # ty: ignore[invalid-argument-type]
-            site_id="site-E",
         )
 
         # Assert
@@ -167,7 +164,6 @@ class TestBuildSiteDescription:
         # Act
         art = await build_site_description(
             fake,  # ty: ignore[invalid-argument-type]
-            site_id="site-nope",
         )
 
         # Assert
@@ -192,7 +188,6 @@ class TestBuildDeviceList:
         # Act
         art = await build_device_list(
             fake,  # ty: ignore[invalid-argument-type]
-            site_id="site-D",
             status=None,
         )
 

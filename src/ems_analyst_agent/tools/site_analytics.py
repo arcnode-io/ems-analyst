@@ -22,7 +22,6 @@ _RTM_DISPATCH_M: Final[str] = "rtm_dispatch_w"
 
 async def _bucketed_series(
     client: ServerClient,
-    site_id: str,
     device_id: str,
     measurement: str,
     start: datetime,
@@ -30,7 +29,6 @@ async def _bucketed_series(
 ) -> dict[datetime, float]:
     """Hourly bucketed series as {ts: value} dict (null buckets dropped)."""
     series = await client.get_measurements(
-        site_id=site_id,
         device_id=device_id,
         measurement=measurement,
         start=start,
@@ -54,7 +52,6 @@ def _revenue(
 async def build_markets(
     client: ServerClient,
     dtm: DtmView,
-    site_id: str,
     window: timedelta,
 ) -> AnalystArtifact:
     """Revenue per market over the window. BarSpec with DAM + RTM bars.
@@ -65,24 +62,18 @@ async def build_markets(
     start = end - window
     bess = dtm.devices_in_category("bess")
     if not bess:
-        return _error_artifact(
-            "not_found", f"No BESS devices in the topology for {site_id}."
-        )
+        return _error_artifact("not_found", "No BESS devices in the site topology.")
     dam_price = await _bucketed_series(
-        client, site_id, _MARKET_DEVICE_ID, _DAM_PRICE_M, start, end
+        client, _MARKET_DEVICE_ID, _DAM_PRICE_M, start, end
     )
     rtm_price = await _bucketed_series(
-        client, site_id, _MARKET_DEVICE_ID, _RTM_PRICE_M, start, end
+        client, _MARKET_DEVICE_ID, _RTM_PRICE_M, start, end
     )
     dam_total = 0.0
     rtm_total = 0.0
     for dev in bess:
-        dam_disp = await _bucketed_series(
-            client, site_id, dev, _DAM_DISPATCH_M, start, end
-        )
-        rtm_disp = await _bucketed_series(
-            client, site_id, dev, _RTM_DISPATCH_M, start, end
-        )
+        dam_disp = await _bucketed_series(client, dev, _DAM_DISPATCH_M, start, end)
+        rtm_disp = await _bucketed_series(client, dev, _RTM_DISPATCH_M, start, end)
         dam_total += _revenue(dam_disp, dam_price)
         rtm_total += _revenue(rtm_disp, rtm_price)
     spec = BarSpec.model_validate(
@@ -106,7 +97,6 @@ async def build_markets(
 
 async def _energy_per_device(
     client: ServerClient,
-    site_id: str,
     device_id: str,
     measurement: str,
     start: datetime,
@@ -114,7 +104,7 @@ async def _energy_per_device(
     sign_filter: Literal["positive", "negative", "abs"],
 ) -> float:
     """Integrate power_w → kWh over window, filtered by sign convention."""
-    series = await _bucketed_series(client, site_id, device_id, measurement, start, end)
+    series = await _bucketed_series(client, device_id, measurement, start, end)
     if sign_filter == "positive":
         return sum(v for v in series.values() if v > 0) / 1000.0
     if sign_filter == "negative":
@@ -125,7 +115,6 @@ async def _energy_per_device(
 async def build_energy_breakdown(
     client: ServerClient,
     dtm: DtmView,
-    site_id: str,
     window: timedelta,
     by: Literal["source", "destination"] = "source",
 ) -> AnalystArtifact:
@@ -143,28 +132,28 @@ async def build_energy_breakdown(
     if by == "source":
         for dev in dtm.devices_in_category("bess"):
             kwh = await _energy_per_device(
-                client, site_id, dev, "active_power", start, end, "positive"
+                client, dev, "active_power", start, end, "positive"
             )
             slices.append({"label": f"{dev} discharge", "value": round(kwh, 2)})
         for dev in dtm.devices_in_category("grid_intertie"):
             kwh = await _energy_per_device(
-                client, site_id, dev, "settlement_power", start, end, "positive"
+                client, dev, "settlement_power", start, end, "positive"
             )
             slices.append({"label": "Grid import", "value": round(kwh, 2)})
     else:
         for dev in dtm.devices_in_category("compute_load"):
             kwh = await _energy_per_device(
-                client, site_id, dev, "active_power", start, end, "abs"
+                client, dev, "active_power", start, end, "abs"
             )
             slices.append({"label": "Compute load", "value": round(kwh, 2)})
         for dev in dtm.devices_in_category("bess"):
             kwh = await _energy_per_device(
-                client, site_id, dev, "active_power", start, end, "negative"
+                client, dev, "active_power", start, end, "negative"
             )
             slices.append({"label": f"{dev} charge", "value": round(kwh, 2)})
         for dev in dtm.devices_in_category("grid_intertie"):
             kwh = await _energy_per_device(
-                client, site_id, dev, "settlement_power", start, end, "negative"
+                client, dev, "settlement_power", start, end, "negative"
             )
             slices.append({"label": "Grid export", "value": round(kwh, 2)})
     # Drop zero slices to keep the pie readable.

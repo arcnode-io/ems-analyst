@@ -44,12 +44,11 @@ class TestServerClientMeasurements:
                 {"ts": "2026-05-18T02:00:00+00:00", "value": None},
             ],
         }
-        pook.get(f"{_BASE}/sites/site-A/measurements").reply(200).json(body)
+        pook.get(f"{_BASE}/measurements").reply(200).json(body)
         client = ServerClient(base_url=_BASE)
 
         # Act
         actual = await client.get_measurements(
-            site_id="site-A",
             device_id="BESS-01",
             measurement="power_kw",
             start=datetime(2026, 5, 18, tzinfo=UTC),
@@ -76,11 +75,11 @@ class TestServerClientDevices:
                 {"device_id": "INV-02", "status": None},
             ],
         }
-        pook.get(f"{_BASE}/sites/site-D/devices").reply(200).json(body)
+        pook.get(f"{_BASE}/devices").reply(200).json(body)
         client = ServerClient(base_url=_BASE)
 
         # Act
-        actual = await client.list_devices(site_id="site-D")
+        actual = await client.list_devices()
 
         # Assert
         assert actual.site_id == "site-D"
@@ -100,11 +99,11 @@ class TestServerClientDescription:
                 {"device_id": "INV-02", "measurement": "power_kw", "samples": 144},
             ],
         }
-        pook.get(f"{_BASE}/sites/site-E/description").reply(200).json(body)
+        pook.get(f"{_BASE}/description").reply(200).json(body)
         client = ServerClient(base_url=_BASE)
 
         # Act
-        actual = await client.describe_site(site_id="site-E")
+        actual = await client.describe_site()
 
         # Assert
         assert len(actual.pairs) == 2
@@ -127,12 +126,11 @@ class TestServerClientForecast:
                 {"forecast_for": "2026-05-18T02:00:00+00:00", "value": 41.7},
             ],
         }
-        pook.get(f"{_BASE}/sites/HB_NORTH/forecast").reply(200).json(body)
+        pook.get(f"{_BASE}/forecast").reply(200).json(body)
         client = ServerClient(base_url=_BASE)
 
         # Act
         actual = await client.get_forecast(
-            site_id="HB_NORTH",
             measurement="dam_lmp_price",
             start=datetime(2026, 5, 18, tzinfo=UTC),
             end=datetime(2026, 5, 18, tzinfo=UTC) + timedelta(hours=3),

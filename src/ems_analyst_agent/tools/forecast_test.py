@@ -44,7 +44,6 @@ class TestBuildForecast:
         # Act
         art = await build_forecast(
             fake,  # ty: ignore[invalid-argument-type]
-            site_id="HB_NORTH",
             measurement="dam_lmp_price",
             window=timedelta(hours=24),
         )
@@ -73,7 +72,6 @@ class TestBuildForecast:
         # Act
         art = await build_forecast(
             fake,  # ty: ignore[invalid-argument-type]
-            site_id="HB_NORTH",
             measurement="dam_lmp_price",
             window=timedelta(hours=24),
         )

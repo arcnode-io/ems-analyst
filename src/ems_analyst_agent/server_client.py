@@ -107,17 +107,20 @@ class ServerClient:
 
     async def get_measurements(
         self,
-        site_id: str,
         device_id: str,
         measurement: str,
         start: datetime,
         end: datetime,
         aggregation: Aggregation = "mean",
     ) -> MeasurementSeries:
-        """GET /sites/{id}/measurements — hourly-bucketed gap-filled series."""
+        """GET /measurements — hourly-bucketed gap-filled series.
+
+        Single-site deploy: the server knows its own site_id, no site
+        in the URL.
+        """
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as c:
             resp = await c.get(
-                f"{self.base_url}/sites/{site_id}/measurements",
+                f"{self.base_url}/measurements",
                 params={
                     "device_id": device_id,
                     "measurement": measurement,
@@ -129,38 +132,33 @@ class ServerClient:
             resp.raise_for_status()
         return MeasurementSeries.model_validate(resp.json())
 
-    async def list_devices(
-        self, site_id: str, status: list[str] | None = None
-    ) -> DeviceList:
-        """GET /sites/{id}/devices — distinct devices + latest status."""
+    async def list_devices(self, status: list[str] | None = None) -> DeviceList:
+        """GET /devices — distinct devices + latest status."""
         params: list[tuple[str, str | int | float | None]] = []
         if status:
             params.extend(("status", s) for s in status)
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as c:
-            resp = await c.get(
-                f"{self.base_url}/sites/{site_id}/devices", params=params
-            )
+            resp = await c.get(f"{self.base_url}/devices", params=params)
             resp.raise_for_status()
         return DeviceList.model_validate(resp.json())
 
-    async def describe_site(self, site_id: str) -> SiteDescription:
-        """GET /sites/{id}/description — inventory of (device, measurement) pairs."""
+    async def describe_site(self) -> SiteDescription:
+        """GET /description — inventory of (device, measurement) pairs."""
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as c:
-            resp = await c.get(f"{self.base_url}/sites/{site_id}/description")
+            resp = await c.get(f"{self.base_url}/description")
             resp.raise_for_status()
         return SiteDescription.model_validate(resp.json())
 
     async def get_forecast(
         self,
-        site_id: str,
         measurement: str,
         start: datetime,
         end: datetime,
     ) -> ForecastSeries:
-        """GET /sites/{id}/forecast — model-published prediction points."""
+        """GET /forecast — model-published prediction points."""
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as c:
             resp = await c.get(
-                f"{self.base_url}/sites/{site_id}/forecast",
+                f"{self.base_url}/forecast",
                 params={
                     "measurement": measurement,
                     "start": _iso_z(start),

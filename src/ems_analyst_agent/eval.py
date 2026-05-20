@@ -32,7 +32,7 @@ from .eval_report import (
     render_cost_projection,
     render_leaderboard,
 )
-from .eval_seed import EVAL_SITE_ID, EvalServerClient, seeded_server_client
+from .eval_seed import EvalServerClient, seeded_server_client
 from .prompts import load_system_prompt
 from .tools.telemetry import _TelemetryDeps
 from .tools.telemetry_tools import (
@@ -121,7 +121,7 @@ async def _run_one(
     `server` is the seeded EvalServerClient — telemetry tools call it
     instead of HTTP since the eval bypasses the FastAPI transport.
     """
-    deps = _TelemetryDeps(site_id=EVAL_SITE_ID, server=server)
+    deps = _TelemetryDeps(server=server)
     t0 = time.perf_counter()
     result = await agent.run(case.prompt, deps=deps)
     elapsed_ms = int((time.perf_counter() - t0) * 1000)

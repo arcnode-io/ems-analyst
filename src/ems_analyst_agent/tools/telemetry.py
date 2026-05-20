@@ -20,10 +20,13 @@ from ..server_client import Aggregation, ServerClient
 
 @dataclass
 class _TelemetryDeps:
-    """Structural deps shape — anything carrying these fields works."""
+    """Structural deps shape — anything carrying these fields works.
+
+    No site_id: each deploy serves one site; the server resolves it
+    from cfg. Tools just hit the flat endpoints.
+    """
 
     artifacts: list[AnalystArtifact] = field(default_factory=list)
-    site_id: str = ""
     server: object | None = None
     device_api: object | None = None
 
@@ -61,7 +64,6 @@ def _error_artifact(code: str, message: str) -> AnalystArtifact:
 
 async def build_timeseries(
     client: ServerClient,
-    site_id: str,
     device_id: str,
     measurement: str,
     window: timedelta,
@@ -71,7 +73,6 @@ async def build_timeseries(
     end = datetime.now(UTC)
     start = end - window
     series = await client.get_measurements(
-        site_id=site_id,
         device_id=device_id,
         measurement=measurement,
         start=start,
@@ -103,15 +104,12 @@ async def build_timeseries(
     )
 
 
-async def build_site_description(
-    client: ServerClient,
-    site_id: str,
-) -> AnalystArtifact:
+async def build_site_description(client: ServerClient) -> AnalystArtifact:
     """Distinct (device, measurement) pairs at the site — registry as a table."""
-    desc = await client.describe_site(site_id=site_id)
+    desc = await client.describe_site()
     if not desc.pairs:
         return _error_artifact(
-            "not_found", f"No measurements published for site '{site_id}' yet."
+            "not_found", "No measurements published for this site yet."
         )
     rows: list[dict[str, str | int]] = [
         {
@@ -123,7 +121,7 @@ async def build_site_description(
     ]
     spec = TableSpec.model_validate(
         {
-            "title": f"Available data at site '{site_id}'",
+            "title": "Available data at this site",
             "columns": [
                 {"key": "device", "label": "Device"},
                 {"key": "measurement", "label": "Measurement"},
@@ -140,11 +138,10 @@ async def build_site_description(
 
 async def build_device_list(
     client: ServerClient,
-    site_id: str,
     status: list[str] | None = None,
 ) -> AnalystArtifact:
     """Distinct device_ids at the site with their latest status."""
-    devs = await client.list_devices(site_id=site_id, status=status)
+    devs = await client.list_devices(status=status)
     rows: list[dict[str, str | None]] = [
         {"device": d.device_id, "status": d.status} for d in devs.devices
     ]

@@ -32,7 +32,7 @@ from pydantic_ai.messages import ModelResponse
 from .eval import EvalCase, _build_model
 from .eval_mcp_cases import MCP_CASES
 from .eval_mcp_scoring import count_mcp_calls, count_mcp_successes, score_case
-from .eval_seed import EVAL_SITE_ID, EvalServerClient, seeded_server_client
+from .eval_seed import EvalServerClient, seeded_server_client
 from .eval_report import (
     USD_PER_INPUT_TOK,
     USD_PER_OUTPUT_TOK,
@@ -65,7 +65,7 @@ async def _run_one_with_mcp(
     case: EvalCase,
     server: EvalServerClient,
 ) -> McpCaseResult:
-    deps = _TelemetryDeps(site_id=EVAL_SITE_ID, server=server)
+    deps = _TelemetryDeps(server=server)
     t0 = time.perf_counter()
     result = await agent.run(case.prompt, deps=deps)
     elapsed_ms = int((time.perf_counter() - t0) * 1000)

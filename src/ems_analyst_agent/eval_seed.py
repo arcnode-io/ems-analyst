@@ -65,7 +65,6 @@ class EvalServerClient(ServerClient):
 
     async def get_measurements(
         self,
-        site_id: str,
         device_id: str,
         measurement: str,
         start: datetime,
@@ -97,7 +96,9 @@ class EvalServerClient(ServerClient):
         """  # noqa: S608  # nosec B608
         conn = await asyncpg.connect(self._postgres_url)
         try:
-            rows = await conn.fetch(sql, start, end, site_id, device_id, measurement)
+            rows = await conn.fetch(
+                sql, start, end, EVAL_SITE_ID, device_id, measurement
+            )
         finally:
             await conn.close()
         unit = next((str(r["unit"]) for r in rows if r["unit"] is not None), "")
@@ -108,16 +109,14 @@ class EvalServerClient(ServerClient):
             for r in rows
         ]
         return MeasurementSeries(
-            site_id=site_id,
+            site_id=EVAL_SITE_ID,
             device_id=device_id,
             measurement=measurement,
             unit=unit,
             points=points,
         )
 
-    async def list_devices(
-        self, site_id: str, status: list[str] | None = None
-    ) -> DeviceList:
+    async def list_devices(self, status: list[str] | None = None) -> DeviceList:
         """Distinct devices + latest status — mirrors DevicesService SQL."""
         sql = """
             WITH latest_status AS (
@@ -135,7 +134,7 @@ class EvalServerClient(ServerClient):
         """
         conn = await asyncpg.connect(self._postgres_url)
         try:
-            rows = await conn.fetch(sql, site_id)
+            rows = await conn.fetch(sql, EVAL_SITE_ID)
         finally:
             await conn.close()
 
@@ -151,9 +150,9 @@ class EvalServerClient(ServerClient):
         ]
         if status:
             devices = [d for d in devices if d.status in status]
-        return DeviceList(site_id=site_id, devices=devices)
+        return DeviceList(site_id=EVAL_SITE_ID, devices=devices)
 
-    async def describe_site(self, site_id: str) -> SiteDescription:
+    async def describe_site(self) -> SiteDescription:
         """(device, measurement, samples) inventory — mirrors DescriptionService."""
         conn = await asyncpg.connect(self._postgres_url)
         try:
@@ -162,12 +161,12 @@ class EvalServerClient(ServerClient):
                 "FROM measurements WHERE site_id = $1 "
                 "GROUP BY device_id, measurement "
                 "ORDER BY device_id, measurement",
-                site_id,
+                EVAL_SITE_ID,
             )
         finally:
             await conn.close()
         return SiteDescription(
-            site_id=site_id,
+            site_id=EVAL_SITE_ID,
             pairs=[
                 MeasurementPair(
                     device_id=str(r["device_id"]),
@@ -180,7 +179,6 @@ class EvalServerClient(ServerClient):
 
     async def get_forecast(
         self,
-        site_id: str,
         measurement: str,
         start: datetime,
         end: datetime,
@@ -188,7 +186,7 @@ class EvalServerClient(ServerClient):
         """Eval doesn't seed forecasts; return an empty envelope."""
         _ = (start, end)
         return ForecastSeries(
-            site_id=site_id,
+            site_id=EVAL_SITE_ID,
             measurement=measurement,
             unit="",
             model_name="",

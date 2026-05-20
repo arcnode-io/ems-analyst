@@ -1,8 +1,8 @@
 """Forecast builder + RunContext wrapper — reads the published model output.
 
 ems-analyst-model writes per-site forecasts into the `forecasts` table
-nightly; server exposes them at /sites/{id}/forecast. The agent never
-touches MLflow at runtime — it just reads the curve.
+nightly; server exposes them at /forecast. The agent never touches
+MLflow at runtime — it just reads the curve.
 """
 
 from datetime import UTC, datetime, timedelta
@@ -16,20 +16,17 @@ from .telemetry import _TelemetryDeps, _error_artifact, _now, _parse_window
 
 async def build_forecast(
     client: ServerClient,
-    site_id: str,
     measurement: str,
     window: timedelta,
 ) -> AnalystArtifact:
     """Bucketed forecast via server's /forecast; empty → error artifact."""
     now = datetime.now(UTC)
     end = now + window
-    series = await client.get_forecast(
-        site_id=site_id, measurement=measurement, start=now, end=end
-    )
+    series = await client.get_forecast(measurement=measurement, start=now, end=end)
     if not series.points:
         return _error_artifact(
             "not_found",
-            f"No forecast for {measurement} at {site_id} in the next {window}.",
+            f"No forecast for {measurement} in the next {window}.",
         )
     points = [
         {"x": p.forecast_for.isoformat().replace("+00:00", "Z"), "y": p.value}
@@ -73,7 +70,7 @@ async def get_forecast(
     td = _parse_window(window)
     client = ctx.deps.server
     assert isinstance(client, ServerClient)
-    art = await build_forecast(client, ctx.deps.site_id, measurement, td)
+    art = await build_forecast(client, measurement, td)
     ctx.deps.artifacts.append(art)
     if art.kind == "error":
         return f"No forecast for {measurement} over {window}."

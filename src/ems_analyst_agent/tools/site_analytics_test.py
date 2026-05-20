@@ -38,7 +38,6 @@ class _FakeServer:
 
     async def get_measurements(
         self,
-        site_id: str,
         device_id: str,
         measurement: str,
         **_unused: object,
@@ -47,7 +46,7 @@ class _FakeServer:
         key = (device_id, measurement)
         pts = [MeasurementPoint(ts=ts, value=v) for ts, v in self._series.get(key, [])]
         return MeasurementSeries(
-            site_id=site_id,
+            site_id="demo-site",
             device_id=device_id,
             measurement=measurement,
             unit="",
@@ -76,9 +75,7 @@ class TestBuildMarkets:
         fake = _FakeServer(series)
 
         # Act
-        art = await build_markets(
-            cast(ServerClient, fake), dtm, "demo-site", timedelta(hours=3)
-        )
+        art = await build_markets(cast(ServerClient, fake), dtm, timedelta(hours=3))
 
         # Assert — DAM: 3h * 1 MWh * $50 = $150. RTM: 3 * 0.5 * $60 = $90.
         assert art.kind == "bar"
@@ -92,9 +89,7 @@ class TestBuildMarkets:
         fake = _FakeServer({})
 
         # Act
-        art = await build_markets(
-            cast(ServerClient, fake), dtm, "demo-site", timedelta(hours=3)
-        )
+        art = await build_markets(cast(ServerClient, fake), dtm, timedelta(hours=3))
 
         # Assert
         assert art.kind == "error"
@@ -123,7 +118,7 @@ class TestBuildEnergyBreakdown:
 
         # Act
         art = await build_energy_breakdown(
-            cast(ServerClient, fake), dtm, "demo-site", timedelta(hours=2), "source"
+            cast(ServerClient, fake), dtm, timedelta(hours=2), "source"
         )
 
         # Assert — BESS 2000 kWh, Grid import 1000 kWh
@@ -161,7 +156,6 @@ class TestBuildEnergyBreakdown:
         art = await build_energy_breakdown(
             cast(ServerClient, fake),
             dtm,
-            "demo-site",
             timedelta(hours=2),
             "destination",
         )
@@ -182,7 +176,7 @@ class TestBuildEnergyBreakdown:
 
         # Act
         art = await build_energy_breakdown(
-            cast(ServerClient, fake), dtm, "demo-site", timedelta(hours=2), "source"
+            cast(ServerClient, fake), dtm, timedelta(hours=2), "source"
         )
 
         # Assert

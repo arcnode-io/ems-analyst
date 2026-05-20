@@ -65,21 +65,20 @@ class AgentDeps:
     def __init__(
         self,
         memory_service: MemoryService,
-        site_id: str,
         server: ServerClient,
         device_api: DeviceApiClient,
     ) -> None:
         """Initialize deps.
 
         `artifacts` is mutated by telemetry tools; HTTP layer assembles
-        the final AnalystMessage from prose + this list. `site_id` is
-        baked into the deployment via the SITE_ID env var. `server` is
+        the final AnalystMessage from prose + this list. `server` is
         the REST client over ems-analyst-server — agent reads telemetry
-        + forecasts through it. `device_api` is the client over
-        ems-device-api — the DTM (device topology) source of truth.
+        + forecasts through it; single-site deploy so the server
+        resolves its own site_id, no site in the URL. `device_api` is
+        the client over ems-device-api — the DTM (device topology)
+        source of truth.
         """
         self.memory_service = memory_service
-        self.site_id = site_id
         self.server = server
         self.device_api = device_api
         self.artifacts: list[AnalystArtifact] = []
@@ -97,7 +96,6 @@ class Agent:
         """
         config = load_config()
         self.market = config.market
-        self.site_id = config.site_id
         embedder = make_embedder(config.settings)
         self.memory_service = MemoryService(
             postgres_url=os.environ["VECTOR_URL"],
@@ -215,7 +213,6 @@ class Agent:
         """
         deps = AgentDeps(
             memory_service=self.memory_service,
-            site_id=self.site_id,
             server=self.server,
             device_api=self.device_api,
         )

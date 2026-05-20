@@ -38,9 +38,7 @@ async def query_timeseries(
     td = _parse_window(window)
     client = ctx.deps.server
     assert isinstance(client, ServerClient)
-    art = await build_timeseries(
-        client, ctx.deps.site_id, device_id, measurement, td, aggregation
-    )
+    art = await build_timeseries(client, device_id, measurement, td, aggregation)
     ctx.deps.artifacts.append(art)
     if art.kind == "error":
         return f"No {measurement} data for {device_id} over {window}."
@@ -57,9 +55,9 @@ async def describe_site(ctx: RunContext[_TelemetryDeps]) -> str:
     """
     client = ctx.deps.server
     assert isinstance(client, ServerClient)
-    art = await build_site_description(client, ctx.deps.site_id)
+    art = await build_site_description(client)
     ctx.deps.artifacts.append(art)
-    return f"Returned device+measurement registry for site '{ctx.deps.site_id}'."
+    return "Returned device+measurement registry for the site."
 
 
 async def list_devices_where(
@@ -69,7 +67,7 @@ async def list_devices_where(
     """List devices at the site, optionally filtered by latest status."""
     client = ctx.deps.server
     assert isinstance(client, ServerClient)
-    art = await build_device_list(client, ctx.deps.site_id, status=status)
+    art = await build_device_list(client, status=status)
     ctx.deps.artifacts.append(art)
     return f"Listed devices status={','.join(status) if status else 'any'}."
 
@@ -92,7 +90,7 @@ async def query_markets(
     assert isinstance(client, ServerClient)
     assert isinstance(device_api, DeviceApiClient)
     dtm = await device_api.get_topology()
-    art = await build_markets(client, dtm, ctx.deps.site_id, td)
+    art = await build_markets(client, dtm, td)
     ctx.deps.artifacts.append(art)
     if art.kind == "error":
         return f"No market dispatch data over {window}."
@@ -120,7 +118,7 @@ async def query_energy_breakdown(
     assert isinstance(client, ServerClient)
     assert isinstance(device_api, DeviceApiClient)
     dtm = await device_api.get_topology()
-    art = await build_energy_breakdown(client, dtm, ctx.deps.site_id, td, by)
+    art = await build_energy_breakdown(client, dtm, td, by)
     ctx.deps.artifacts.append(art)
     if art.kind == "error":
         return f"No energy {by} data over {window}."
