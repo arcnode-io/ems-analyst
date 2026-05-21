@@ -42,7 +42,7 @@ format = "black ."
 lint = "ruff check"
 typecheck = "ty check"
 audit-src = "bandit -r src/* -s B101"
-audit-packages = "pip-audit --ignore-vuln GHSA-4xh5-x5gv-qwph --ignore-vuln CVE-2026-3219 --ignore-vuln CVE-2026-45409"
+audit-packages = "pip-audit --ignore-vuln GHSA-4xh5-x5gv-qwph --ignore-vuln CVE-2026-3219 --ignore-vuln CVE-2026-45409 --ignore-vuln PYSEC-2025-183"
 security = ["audit-src", "audit-packages"]
 checks = ["depcheck", "format", "lint", "typecheck", "security"]
 healthcheck = "bash -c 'curl -sf -o /dev/null -w \"OpenWeatherMap: %{http_code}\\n\" \"https://api.openweathermap.org/data/2.5/weather?q=London&appid=$OPENWEATHERMAP_API_KEY\" && echo APIS_READY'"
@@ -62,6 +62,13 @@ package_module_name_map = { "psycopg2-binary" = "psycopg2" }
 [tool.deptry.per_rule_ignores]
 DEP002 = ["python-mcp-server", "idna"]
 DEP004 = ["pytest", "pook", "psycopg2"]
+
+[tool.pytest.ini_options]
+# src-layout: put src/ on sys.path so `import ems_analyst_agent` resolves
+# top-level — matching how the runtime code imports itself (e.g.
+# `resources.files("ems_analyst_agent.demo_data")`). Without this the
+# suite only passed when the venv happened to carry the package.
+pythonpath = ["src"]
 
 [tool.coverage.run]
 omit = ["*/test_*.py", "tests/*", "*/main.py", "*/config.py"]

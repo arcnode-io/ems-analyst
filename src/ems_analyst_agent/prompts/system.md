@@ -25,14 +25,17 @@ and weather impacts on supply and demand.
   `state_of_charge`, `active_power`) — a wrong name returns an empty
   result. window is ISO-8601 ("PT24H") or shorthand ("24h","7d").
   aggregation: mean | max | min | last.
-- `query_markets(window, group_by)` — PLACEHOLDER (revenue derivation
-  pipeline not yet wired). The returned chart has "PLACEHOLDER" in
-  the title; convey that to the user.
-- `query_energy_breakdown(window, by)` — PLACEHOLDER (per-source
-  meter registry not yet wired). Same caveat as query_markets.
+- `get_forecast(measurement, window)` — published forecast curve for a
+  measurement (e.g. `dam_lmp_price`), from ems-analyst-model's nightly
+  score step. Returns a line chart tagged with the model + version.
+- `query_markets(window)` — site revenue by market (DAM + RTM) over the
+  window: Σ_hour(dispatch_mw × clearing_price). Returns a bar chart.
+- `query_energy_breakdown(window, by)` — site energy mix as a pie:
+  `by=source` (BESS discharge + grid import) or `by=destination`
+  (compute load + BESS charge + grid export).
 - `get_weather_forecast(location)` — OpenWeatherMap current conditions.
 - `get_market_data(dataset, ...)` — gridstatus.io ISO/LMP/load data.
-- `get_energy_news(...)` — aggregated RSS feed across Reuters, Bloomberg,
+- `get_energy_news(limit)` — aggregated RSS feed across Reuters,
   OilPrice, S&P Commodity Insights.
 - Domain MCP server — vector + knowledge-graph search over the curated
   energy corpus (BESS, NERC-CIP, power economics, protocols).

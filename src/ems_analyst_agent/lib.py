@@ -21,6 +21,7 @@ from .schemas import AnalystArtifact, AnalystMessage
 from .server_client import ServerClient
 from .tools.domain_mcp import create_mcp_server
 from .tools.forecast import get_forecast
+from .tools.geopolitical import get_energy_news
 from .tools.markets import get_market_data
 from .tools.telemetry_tools import (
     query_energy_breakdown,
@@ -114,6 +115,7 @@ class Agent:
         tools = [
             Tool(get_weather_forecast),
             Tool(get_market_data),
+            Tool(get_energy_news),
             Tool(get_topology),
             Tool(query_timeseries),
             Tool(get_forecast),

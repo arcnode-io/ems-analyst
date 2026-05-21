@@ -11,7 +11,13 @@ from pydantic_ai import RunContext
 
 from ..schemas import AnalystArtifact, LineSpec
 from ..server_client import ServerClient
-from .telemetry import _TelemetryDeps, _error_artifact, _now, _parse_window
+from .telemetry import (
+    _TelemetryDeps,
+    _error_artifact,
+    _fmt_window,
+    _now,
+    _parse_window,
+)
 
 
 async def build_forecast(
@@ -26,7 +32,7 @@ async def build_forecast(
     if not series.points:
         return _error_artifact(
             "not_found",
-            f"No forecast for {measurement} in the next {window}.",
+            f"No forecast for {measurement} in the next {_fmt_window(window)}.",
         )
     points = [
         {"x": p.forecast_for.isoformat().replace("+00:00", "Z"), "y": p.value}
@@ -35,7 +41,7 @@ async def build_forecast(
     # Lineage in the title so the user knows which model published the
     # curve they're looking at.
     title = (
-        f"{measurement} forecast — next {window} "
+        f"{measurement} forecast — next {_fmt_window(window)} "
         f"({series.model_name} v{series.model_version})"
     )
     spec = LineSpec.model_validate(

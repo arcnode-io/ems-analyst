@@ -11,7 +11,7 @@ from typing import Final, Literal
 from ..device_api import DtmView
 from ..schemas import AnalystArtifact, BarSpec, PieSpec
 from ..server_client import ServerClient
-from .telemetry import _error_artifact, _now
+from .telemetry import _error_artifact, _fmt_window, _now
 
 _MARKET_DEVICE_ID: Final[str] = "market_01"
 _DAM_PRICE_M: Final[str] = "dam_clearing_price_usd_per_mwh"
@@ -78,7 +78,7 @@ async def build_markets(
         rtm_total += _revenue(rtm_disp, rtm_price)
     spec = BarSpec.model_validate(
         {
-            "title": f"Revenue by market (last {window})",
+            "title": f"Revenue by market (last {_fmt_window(window)})",
             "xAxis": {"label": "Market", "categories": ["DAM", "RTM"]},
             "yAxis": {"label": "Revenue", "unit": "USD"},
             "series": [
@@ -160,11 +160,12 @@ async def build_energy_breakdown(
     slices = [s for s in slices if isinstance(s["value"], float) and s["value"] > 0]
     if not slices:
         return _error_artifact(
-            "not_found", f"No energy {by} data over the last {window}."
+            "not_found",
+            f"No energy {by} data over the last {_fmt_window(window)}.",
         )
     spec = PieSpec.model_validate(
         {
-            "title": f"Energy by {by} (last {window})",
+            "title": f"Energy by {by} (last {_fmt_window(window)})",
             "unit": "kWh",
             "slices": slices,
             "dataAsOf": _now(),
