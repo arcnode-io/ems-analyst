@@ -64,7 +64,8 @@ format = "black ."
 lint = "ruff check"
 typecheck = "ty check"
 audit-src = "bandit -r src/* -s B101,B608"
-audit-packages = "pip-audit --ignore-vuln GHSA-4xh5-x5gv-qwph --ignore-vuln GHSA-58qw-9mgm-455v"
+# PYSEC-2025-183 (pyjwt 2.12.1) — no fixed version published yet; triage-ignore.
+audit-packages = "pip-audit --ignore-vuln GHSA-4xh5-x5gv-qwph --ignore-vuln GHSA-58qw-9mgm-455v --ignore-vuln PYSEC-2025-183"
 security = ["audit-src", "audit-packages"]
 checks = ["depcheck", "format", "lint", "typecheck", "security"]
 unit = "pytest -vv src/*"
