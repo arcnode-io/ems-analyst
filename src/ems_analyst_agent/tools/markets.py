@@ -5,6 +5,7 @@ error strings instead of exception propagation so the LLM can recover.
 """
 
 import os
+from datetime import UTC, date, datetime
 from typing import Any, Final
 
 import httpx
@@ -44,6 +45,11 @@ async def get_market_data(
             "GRIDSTATUS_API_KEY environment variable not set. "
             "Get a key from https://www.gridstatus.io"
         )
+
+    # TEMP: free-tier export quota exhausted seeding demo datasets; it
+    # resets the 1st. Block until then. Self-expires — DELETE after 2026-06-01.
+    if datetime.now(UTC).date() < date(2026, 6, 1):
+        return "gridstatus.io paused until 2026-06-01 — monthly export quota exhausted."
 
     params: dict[str, Any] = {"limit": limit}
     if start is not None:

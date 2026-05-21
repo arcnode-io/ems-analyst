@@ -1,8 +1,9 @@
 """Energy-news RSS aggregator.
 
-Fan-out fetch across the major energy RSS feeds (Reuters/Bloomberg/
-OilPrice/S&P Commodity Insights), feedparser-decoded, summarised down to
-headline + link + pub time so the LLM gets compact context.
+Fan-out fetch across the major energy RSS feeds (EIA Today in Energy,
+EIA press releases, OilPrice, Utility Dive), feedparser-decoded,
+summarised down to headline + link + pub time so the LLM gets compact
+context.
 
 Tests pook-mock every URL — see [[feedback-llm-calls]] for the rule.
 """
@@ -13,11 +14,14 @@ from typing import Final
 import feedparser
 import httpx
 
+# All four verified live + free (no key, no signup, no paywall). EIA is
+# the authoritative US energy source; OilPrice covers commodities;
+# Utility Dive covers grid + power markets (PJM/CAISO/ERCOT).
 ENERGY_FEED_URLS: Final[tuple[str, ...]] = (
-    "https://www.oilprice.com/rss/main",
-    "https://www.spglobal.com/commodityinsights/en/rss-feed/oil",
-    "https://www.spglobal.com/commodityinsights/en/rss-feed/natural-gas",
-    "https://feeds.reuters.com/reuters/businessNews",
+    "https://www.eia.gov/rss/todayinenergy.xml",
+    "https://www.eia.gov/rss/press_rss.xml",
+    "https://oilprice.com/rss/main",
+    "https://www.utilitydive.com/feeds/news/",
 )
 HTTP_TIMEOUT_SEC: Final[float] = 10.0
 PER_FEED_HEADLINE_CAP: Final[int] = 5
