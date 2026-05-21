@@ -79,7 +79,7 @@ def _build_model(provider: Provider) -> Model:
     if provider == "bedrock":
         return BedrockConverseModel("us.anthropic.claude-sonnet-4-6")
     return OpenAIChatModel(
-        "qwen3.6:35b",
+        "gemma4:26b",
         provider=OpenAIProvider(
             base_url="http://173.211.12.43:11434/v1", api_key="ollama"
         ),

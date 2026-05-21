@@ -5,7 +5,7 @@ local:
   settings:
     llm_provider: ollama
     ollama_base_url: http://173.211.12.43:11434/v1
-    ollama_chat_model: qwen3.6:35b
+    ollama_chat_model: gemma4:26b
     ollama_embedding_model: qwen3-embedding:4b
   market:
     wholesale_market: ercot
@@ -18,7 +18,7 @@ demo:
   settings:
     llm_provider: ollama
     ollama_base_url: http://173.211.12.43:11434/v1
-    ollama_chat_model: qwen3.6:35b
+    ollama_chat_model: gemma4:26b
     ollama_embedding_model: qwen3-embedding:4b
   market:
     wholesale_market: ercot
