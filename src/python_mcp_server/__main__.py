@@ -44,6 +44,7 @@ async def _seed() -> None:
             config.settings.graph_neo4j_seed_url, config.e2e
         ),
         graph=config.graph,
+        e2e=config.e2e,
     )
 
 

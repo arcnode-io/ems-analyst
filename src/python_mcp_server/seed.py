@@ -37,7 +37,12 @@ import boto3
 import httpx
 from botocore.auth import SigV4Auth
 from botocore.awsrequest import AWSRequest
-from neo4j import AsyncGraphDatabase, AsyncManagedTransaction, AsyncSession
+from neo4j import (
+    AsyncDriver,
+    AsyncGraphDatabase,
+    AsyncManagedTransaction,
+    AsyncSession,
+)
 
 from .clients.graphiti_client import _split_neo4j_url
 from .config import Neo4jGraph, NeptuneGraph, NoneGraph
@@ -210,11 +215,28 @@ async def _wipe_graph(session: AsyncSession) -> None:
     )
 
 
-async def seed_graph_neo4j(seed_url: str) -> None:
-    """Restore cypher dump into GRAPH_URL Neo4j if marker absent.
+async def _graph_marker_present(driver: AsyncDriver) -> bool:
+    """True if the graph seed marker node exists."""
+    async with driver.session() as session:
+        result = await session.run(
+            "MATCH (m:ArcnodeSeedMarker {slice: $slice}) RETURN m LIMIT 1",
+            slice=GRAPH_MARKER_SLICE,
+        )
+        return await result.single() is not None
 
-    Marker absent → the graph is wiped first (a failed prior run leaves
-    schema debris apoc's no-IF-NOT-EXISTS DDL would collide with).
+
+async def seed_graph_neo4j(seed_url: str, e2e: bool = False) -> None:
+    """Restore cypher dump into GRAPH_URL Neo4j.
+
+    Production (e2e=False): skips when the marker node is present — a
+    customer reboot must not re-seed. Marker absent → wipe + load + mark.
+
+    e2e=True: ignores the marker, always wipes + re-seeds. An e2e run
+    must exercise the seed workflow fresh every time; a leftover marker
+    from a prior run would otherwise make it silently skip.
+
+    Marker absent (or e2e) → the graph is wiped first (a failed prior run
+    leaves schema debris apoc's no-IF-NOT-EXISTS DDL would collide with).
 
     Data statements commit in batches of _DATA_BATCH_SIZE managed write
     transactions — a failure within a batch rolls that batch back.
@@ -228,14 +250,9 @@ async def seed_graph_neo4j(seed_url: str) -> None:
         raise RuntimeError("GRAPH_URL must include user:password (Aura format)")
     driver = AsyncGraphDatabase.driver(uri, auth=(user, password))
     try:
-        async with driver.session() as session:
-            result = await session.run(
-                "MATCH (m:ArcnodeSeedMarker {slice: $slice}) RETURN m LIMIT 1",
-                slice=GRAPH_MARKER_SLICE,
-            )
-            if await result.single():
-                logger.info("graph slice already seeded; skipping")
-                return
+        if not e2e and await _graph_marker_present(driver):
+            logger.info("graph slice already seeded; skipping")
+            return
         logger.info("seeding graph slice from %s", seed_url)
         cypher_script = _fetch_gunzip(seed_url)
         statements = [s.strip() for s in cypher_script.split(";\n") if s.strip()]
@@ -492,6 +509,7 @@ async def seed_all(
     vector_url: str | None,
     graph_neo4j_url: str | None,
     graph: NoneGraph | Neo4jGraph | NeptuneGraph,
+    e2e: bool = False,
 ) -> None:
     """Run available seeds at boot. Skips a slice when its conn is unset.
 
@@ -499,6 +517,9 @@ async def seed_all(
       - Neo4jGraph + GRAPH_URL env + graph_neo4j_url → seed_graph_neo4j
       - NeptuneGraph (hosts + role from cfg) → seed_graph_neptune
       - NoneGraph → skip
+
+    e2e=True forces the neo4j graph seed to re-run regardless of the
+    marker — an e2e must exercise the seed fresh every time.
     """
     if vector_url and os.environ.get("VECTOR_URL"):
         await seed_vector(vector_url)
@@ -506,7 +527,7 @@ async def seed_all(
         logger.info("vector seed skipped (no VECTOR_URL or seed URL)")
     if isinstance(graph, Neo4jGraph):
         if graph_neo4j_url and os.environ.get("GRAPH_URL"):
-            await seed_graph_neo4j(graph_neo4j_url)
+            await seed_graph_neo4j(graph_neo4j_url, e2e=e2e)
         else:
             logger.info("graph seed skipped (no GRAPH_URL or seed URL)")
     elif isinstance(graph, NeptuneGraph):
