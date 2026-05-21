@@ -57,7 +57,26 @@ class ConversationService:
         Both surface as the same `code='site_id_changed'` per HMI handoff.
 
         Raises:
-            SiteIdMismatchError: on either layer's mismatch.
+            SiteIdMismatchError: on either layer's mismatch (→ HTTP 409).
+        """
+        # The whole turn — store setup, conversation DB I/O, agent call —
+        # is wrapped. Any infra failure (Postgres unreachable, VECTOR_URL
+        # unset, MCP child crash, Ollama timeout, Bedrock 503) degrades to
+        # a 200 error-artifact per the HMI brief; never an HTTP 500. Only
+        # SiteIdMismatchError is re-raised — the controller maps it to 409.
+        try:
+            return await self._run_turn(req)
+        except SiteIdMismatchError:
+            raise
+        except Exception:
+            log.exception("analyst turn failed")
+            return _error_message()
+
+    async def _run_turn(self, req: AnalystChatRequest) -> AnalystMessage:
+        """The turn proper — siteId checks, store I/O, agent call.
+
+        Raises freely; `handle_turn` is the error boundary that catches
+        everything except SiteIdMismatchError.
         """
         store = self._store_instance()
         request_site = req.context.site_id if req.context else None
@@ -76,17 +95,9 @@ class ConversationService:
             )
 
         history = await store.load_history(req.conversation_id)
-        try:
-            turn = await self._agent_instance().chat_turn(
-                req.message, message_history=history
-            )
-        except Exception:
-            # Reason: catching broad — Ollama timeouts, MCP child crash,
-            # historian down, Bedrock 503 all surface here. HMI renders
-            # the error variant of AnalystArtifact via its existing
-            # ChartRenderer error-card path; better than HTTP 500.
-            log.exception("agent turn failed")
-            return _error_message()
+        turn = await self._agent_instance().chat_turn(
+            req.message, message_history=history
+        )
         await store.append_messages(req.conversation_id, turn.new_messages)
         return turn.message
 

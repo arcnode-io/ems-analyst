@@ -135,3 +135,33 @@ class TestHandleTurn:
         # Act + Assert
         with pytest.raises(SiteIdMismatchError, match="this deployment"):
             await svc.handle_turn(req)
+
+
+class _CrashingStore:
+    """Duck-typed store whose first call fails like an unreachable Postgres."""
+
+    async def get_site_id(self, _cid: str) -> str | None:
+        raise OSError("Postgres unreachable")
+
+
+class TestHandleTurnErrorBoundary:
+    """A turn must never surface as HTTP 500 — HMI brief contract."""
+
+    @pytest.mark.asyncio
+    async def test_store_failure_returns_error_artifact(self) -> None:
+        # Arrange — store blows up the way an unreachable Postgres would
+        svc, _, _ = _service_with_fakes()
+        svc._store = _CrashingStore()  # ty: ignore[invalid-assignment]
+        svc._baked_site_id = "site-a"  # match request → past the 409 check
+        req = AnalystChatRequest(
+            conversation_id="55555555-5555-5555-5555-555555555555",
+            message="hello",
+            context=ChatContext(site_id="site-a"),
+        )
+
+        # Act — must not raise; the store error is outside the old try
+        msg = await svc.handle_turn(req)
+
+        # Assert — degraded to a 200 error-artifact, not a 500
+        assert msg.role == "assistant"
+        assert '"kind":"error"' in msg.model_dump_json()
