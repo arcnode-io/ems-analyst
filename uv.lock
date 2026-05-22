@@ -648,7 +648,7 @@ wheels = [
 [[package]]
 name = "ems-analyst-agent"
 version = "1.0.0b0"
-source = { git = "https://gitlab.com/arcnode-io/ems-analyst-agent.git#ef790657d78811cfdb42bc3dd16ef3d77b5634ca" }
+source = { git = "https://gitlab.com/arcnode-io/ems-analyst-agent.git#6d1b3308265c93b6142ce9df875901414057f377" }
 dependencies = [
     { name = "asyncpg" },
     { name = "fastmcp" },
