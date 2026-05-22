@@ -1,17 +1,20 @@
 """Shared building blocks for the telemetry / analytics tool modules.
 
-The structural deps shape, window parsing/labelling, and the
-error-artifact helper — kept in one place so `telemetry`,
-`site_analytics`, `forecast` and `topology_tool` lean on it without
-importing one another.
+The structural deps shape, window parsing/labelling, the error-artifact
+helper, and the chart→table re-render — kept in one place so
+`telemetry`, `site_analytics`, `forecast` and `topology_tool` lean on it
+without importing one another.
 """
 
 import re
 from dataclasses import dataclass, field
 from datetime import timedelta
+from typing import Literal
 
 from ..isotime import iso_z
-from ..schemas import AnalystArtifact
+from ..schemas import AnalystArtifact, BarSpec, LineSpec, PieSpec, TableSpec
+
+Render = Literal["chart", "table"]
 
 
 @dataclass
@@ -64,4 +67,54 @@ def _error_artifact(code: str, message: str) -> AnalystArtifact:
             "kind": "error",
             "spec": {"code": code, "message": message, "dataAsOf": iso_z()},
         }
+    )
+
+
+def _to_table(artifact: AnalystArtifact) -> AnalystArtifact:
+    """Re-render a chart artifact's data as a TableSpec artifact.
+
+    Backs the `render="table"` tool option — same data, table card
+    instead of a chart. Error artifacts pass through unchanged; tables
+    are returned as-is.
+    """
+    spec = artifact.spec
+    columns: list[dict[str, str]]
+    rows: list[dict[str, str | float | None]]
+    if isinstance(spec, LineSpec):
+        series = spec.series[0]
+        columns = [
+            {"key": "time", "label": spec.x_axis.label},
+            {"key": "value", "label": spec.y_axis.label},
+        ]
+        rows = [{"time": str(p.x), "value": p.y} for p in series.points]
+    elif isinstance(spec, BarSpec):
+        series = spec.series[0]
+        columns = [
+            {"key": "category", "label": spec.x_axis.label},
+            {"key": "value", "label": series.label},
+        ]
+        rows = [
+            {"category": c, "value": v}
+            for c, v in zip(spec.x_axis.categories, series.values, strict=True)
+        ]
+    elif isinstance(spec, PieSpec):
+        columns = [
+            {"key": "label", "label": "Category"},
+            {"key": "value", "label": spec.unit},
+        ]
+        rows = [{"label": s.label, "value": s.value} for s in spec.slices]
+    else:
+        # error or already a table — nothing to re-render
+        return artifact
+    table = TableSpec.model_validate(
+        {
+            "title": spec.title,
+            "columns": columns,
+            "rows": rows,
+            "dataAsOf": spec.data_as_of,
+            "note": spec.note,
+        }
+    )
+    return AnalystArtifact.model_validate(
+        {"kind": "table", "spec": table.model_dump(by_alias=True)}
     )

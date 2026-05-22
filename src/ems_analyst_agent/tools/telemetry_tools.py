@@ -10,7 +10,7 @@ from pydantic_ai import RunContext
 
 from ..device_api import DeviceApiClient
 from ..server_client import ServerClient
-from ._common import _TelemetryDeps, _parse_window
+from ._common import Render, _TelemetryDeps, _parse_window, _to_table
 from .site_analytics import build_energy_breakdown, build_markets
 from .telemetry import build_site_description, build_timeseries
 
@@ -21,6 +21,7 @@ async def query_timeseries(
     measurement: str,
     window: str = "PT24H",
     aggregation: Literal["mean", "max", "min", "last"] = "mean",
+    render: Render = "chart",
 ) -> str:
     """Read-only timeseries query through ems-analyst-server.
 
@@ -29,15 +30,18 @@ async def query_timeseries(
         measurement: Measurement name (e.g. state_of_charge, active_power).
         window: ISO-8601 duration ("PT24H") or shorthand ("24h","7d").
         aggregation: mean | max | min | last (hourly bucket).
+        render: "chart" for a line chart, "table" for a data table.
     """
     td = _parse_window(window)
     client = ctx.deps.server
     assert isinstance(client, ServerClient)
     art = await build_timeseries(client, device_id, measurement, td, aggregation)
+    if render == "table":
+        art = _to_table(art)
     ctx.deps.artifacts.append(art)
     if art.kind == "error":
         return f"No {measurement} data for {device_id} over {window}."
-    return f"Queried {measurement} on {device_id}, window={window}, agg={aggregation}."
+    return f"Queried {measurement} on {device_id} ({render}, window={window})."
 
 
 async def describe_site(ctx: RunContext[_TelemetryDeps]) -> str:
@@ -60,14 +64,15 @@ async def describe_site(ctx: RunContext[_TelemetryDeps]) -> str:
 async def query_markets(
     ctx: RunContext[_TelemetryDeps],
     window: str = "24h",
+    render: Render = "chart",
 ) -> str:
     """Site revenue by market (DAM + RTM) over the window.
 
-    Revenue = Σ_hour( dispatch_mw * clearing_price_$/MWh ). BarSpec
-    with one bar per market.
+    Revenue = Σ_hour( dispatch_mw * clearing_price_$/MWh ).
 
     Args:
         window: ISO-8601 duration ("PT24H") or shorthand ("24h","7d","30d").
+        render: "chart" for a bar chart, "table" for a data table.
     """
     td = _parse_window(window)
     client = ctx.deps.server
@@ -76,26 +81,29 @@ async def query_markets(
     assert isinstance(device_api, DeviceApiClient)
     dtm = await device_api.get_topology()
     art = await build_markets(client, dtm, td)
+    if render == "table":
+        art = _to_table(art)
     ctx.deps.artifacts.append(art)
     if art.kind == "error":
         return f"No market dispatch data over {window}."
-    return f"Returned revenue by market for the last {window}."
+    return f"Returned revenue by market ({render}) for the last {window}."
 
 
 async def query_energy_breakdown(
     ctx: RunContext[_TelemetryDeps],
     window: str = "24h",
     by: Literal["source", "destination"] = "source",
+    render: Render = "chart",
 ) -> str:
     """Site energy mix by source or destination over the window.
 
     Source = BESS discharge + grid import. Destination = compute load +
-    BESS charge + grid export. Integrated per-device power → kWh,
-    rendered as PieSpec.
+    BESS charge + grid export. Integrated per-device power → kWh.
 
     Args:
         window: ISO-8601 duration ("PT24H") or shorthand ("24h","7d").
         by: source | destination — direction of energy flow.
+        render: "chart" for a pie chart, "table" for a data table.
     """
     td = _parse_window(window)
     client = ctx.deps.server
@@ -104,7 +112,9 @@ async def query_energy_breakdown(
     assert isinstance(device_api, DeviceApiClient)
     dtm = await device_api.get_topology()
     art = await build_energy_breakdown(client, dtm, td, by)
+    if render == "table":
+        art = _to_table(art)
     ctx.deps.artifacts.append(art)
     if art.kind == "error":
         return f"No energy {by} data over {window}."
-    return f"Returned energy by {by} for the last {window}."
+    return f"Returned energy by {by} ({render}) for the last {window}."

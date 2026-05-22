@@ -12,7 +12,14 @@ from pydantic_ai import RunContext
 from ..isotime import iso_z
 from ..schemas import AnalystArtifact, LineSpec
 from ..server_client import ServerClient
-from ._common import _TelemetryDeps, _error_artifact, _fmt_window, _parse_window
+from ._common import (
+    Render,
+    _TelemetryDeps,
+    _error_artifact,
+    _fmt_window,
+    _parse_window,
+    _to_table,
+)
 
 
 async def build_forecast(
@@ -60,22 +67,26 @@ async def get_forecast(
     ctx: RunContext[_TelemetryDeps],
     measurement: str,
     window: str = "PT24H",
+    render: Render = "chart",
 ) -> str:
     """Published forecast curve for a measurement at this site.
 
     The forecast comes from ems-analyst-model's nightly score step;
-    server exposes it at /forecast. Returns a line chart with the
-    publishing model + version in the title.
+    server exposes it at /forecast.
 
     Args:
         measurement: Forecast measurement name (e.g. dam_lmp_price).
         window: ISO-8601 duration ("PT24H") or shorthand ("24h","7d").
+        render: "chart" for a line chart, "table" for a data table —
+            use "table" when the user asks for the numbers as a table.
     """
     td = _parse_window(window)
     client = ctx.deps.server
     assert isinstance(client, ServerClient)
     art = await build_forecast(client, measurement, td)
+    if render == "table":
+        art = _to_table(art)
     ctx.deps.artifacts.append(art)
     if art.kind == "error":
         return f"No forecast for {measurement} over {window}."
-    return f"Returned forecast curve for {measurement} (window={window})."
+    return f"Returned forecast {render} for {measurement} (window={window})."

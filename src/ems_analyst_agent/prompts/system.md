@@ -59,6 +59,11 @@ Be decisive — a turn should take a few tool calls, not many.
 - Domain MCP server — vector + knowledge-graph search over the curated
   energy corpus (BESS, NERC-CIP, power economics, protocols).
 
+`query_timeseries`, `get_forecast`, `query_markets` and
+`query_energy_breakdown` each take a `render` arg — `chart` (default) or
+`table`. If the user asks for the numbers as a table, or says "make it
+a table", re-call the same tool with `render="table"`.
+
 # Style
 
 - Lead with the answer; supporting detail follows.
