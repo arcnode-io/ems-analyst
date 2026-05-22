@@ -9,7 +9,7 @@ module is the Agent's construction + entrypoints.
 import asyncio
 import logging
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 
 from pydantic_ai import Agent as PydanticAgent, RunContext, Tool
 from pydantic_ai.messages import ModelMessage
@@ -170,21 +170,31 @@ class Agent:
         *,
         message_history: list[ModelMessage] | None = None,
     ) -> ChatTurnResult:
-        """One agent turn — drains `chat_turn_stream` to its terminal result."""
+        """One agent turn — drains `chat_turn_stream` fully for its result.
+
+        Drains to exhaustion rather than returning on the `result` event:
+        that lets `run_turn_stream`'s `agent.iter()` context exit inside
+        this task. Bailing early parks the generator mid-context, so it
+        finalizes in another task → anyio "cancel scope exited in a
+        different task".
+        """
+        result: ChatTurnResult | None = None
         async for name, payload in self.chat_turn_stream(
             prompt, message_history=message_history
         ):
             if name == "result":
                 assert isinstance(payload, ChatTurnResult)
-                return payload
-        raise RuntimeError("chat_turn_stream ended without a result")
+                result = payload
+        if result is None:
+            raise RuntimeError("chat_turn_stream ended without a result")
+        return result
 
     def chat_turn_stream(
         self,
         prompt: str,
         *,
         message_history: list[ModelMessage] | None = None,
-    ) -> AsyncIterator[tuple[str, object]]:
+    ) -> AsyncGenerator[tuple[str, object]]:
         """Run a turn as a live event stream — see `turn.run_turn_stream`.
 
         Yields `tool_start` / `tool_end` events live, then a terminal

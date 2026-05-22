@@ -8,7 +8,7 @@ SSE endpoint consumes the generator directly.
 
 import logging
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 
 from pydantic_ai import Agent as PydanticAgent, UsageLimits
@@ -92,7 +92,7 @@ async def run_turn_stream(
     deps: AgentDeps,
     prompt: str,
     message_history: list[ModelMessage] | None,
-) -> AsyncIterator[tuple[str, object]]:
+) -> AsyncGenerator[tuple[str, object]]:
     """Run a turn, yielding live tool events then a terminal result.
 
     Yields, in order:
