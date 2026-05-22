@@ -39,10 +39,7 @@ class _FakeAgent:
     def __init__(self) -> None:
         self.calls: list[tuple[str, list[object]]] = []
 
-    async def chat_turn(
-        self, prompt: str, *, message_history: list[object] | None = None
-    ) -> ChatTurnResult:
-        self.calls.append((prompt, list(message_history or [])))
+    def _turn(self, prompt: str) -> ChatTurnResult:
         return ChatTurnResult(
             message=AnalystMessage.model_validate(
                 {
@@ -52,6 +49,24 @@ class _FakeAgent:
             ),
             new_messages=[],  # type: ignore[list-item] — unit-test stub
         )
+
+    async def chat_turn(
+        self, prompt: str, *, message_history: list[object] | None = None
+    ) -> ChatTurnResult:
+        self.calls.append((prompt, list(message_history or [])))
+        return self._turn(prompt)
+
+    async def chat_turn_stream(
+        self, prompt: str, *, message_history: list[object] | None = None
+    ) -> object:
+        """Async-gen stand-in — a tool_start/tool_end pair then the result."""
+        self.calls.append((prompt, list(message_history or [])))
+        yield "tool_start", {"seq": 1, "tool": "describe_site", "label": "L"}
+        yield (
+            "tool_end",
+            {"seq": 1, "tool": "describe_site", "outcome": "ok", "ms": 5},
+        )
+        yield "result", self._turn(prompt)
 
 
 def _service_with_fakes() -> tuple[ConversationService, _FakeStore, _FakeAgent]:
@@ -165,3 +180,27 @@ class TestHandleTurnErrorBoundary:
         # Assert — degraded to a 200 error-artifact, not a 500
         assert msg.role == "assistant"
         assert '"kind":"error"' in msg.model_dump_json()
+
+
+class TestStreamTurn:
+    """stream_turn emits SSE frames — tool events then a terminal message."""
+
+    @pytest.mark.asyncio
+    async def test_emits_tool_events_then_message_and_done(self) -> None:
+        # Arrange
+        svc, _, _ = _service_with_fakes()
+        svc._baked_site_id = "site-a"
+        req = AnalystChatRequest(
+            conversation_id="66666666-6666-6666-6666-666666666666",
+            message="hi",
+            context=ChatContext(site_id="site-a"),
+        )
+
+        # Act — caller supplies history (controller ran ensure_conversation)
+        blob = b"".join([f async for f in svc.stream_turn(req, [])]).decode()
+
+        # Assert — every contract event, in SSE frame form, terminal done
+        assert "event: tool_start" in blob
+        assert "event: tool_end" in blob
+        assert "event: message" in blob
+        assert 'event: done\ndata: {"status": "ok"}' in blob
