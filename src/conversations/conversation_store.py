@@ -15,8 +15,9 @@ calls + returns preserved) so subsequent turns can replay context.
 import json
 import logging
 
-import asyncpg
 from pydantic_ai.messages import ModelMessage, ModelMessagesTypeAdapter
+
+from src.db import connect
 
 log = logging.getLogger(__name__)
 
@@ -37,8 +38,7 @@ class ConversationStore:
         """CREATE TABLE IF NOT EXISTS for both tables + index."""
         if self._tables_ready:
             return
-        conn = await asyncpg.connect(self.postgres_url)
-        try:
+        async with connect(self.postgres_url) as conn:
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS conversations (
                     id UUID PRIMARY KEY,
@@ -60,48 +60,37 @@ class ConversationStore:
                 CREATE INDEX IF NOT EXISTS conv_msg_thread_idx
                     ON conversation_messages (conversation_id, position)
             """)
-        finally:
-            await conn.close()
         self._tables_ready = True
 
     async def get_site_id(self, conversation_id: str) -> str | None:
         """Return the conversation's siteId, or None if it doesn't exist."""
         await self._ensure_tables()
-        conn = await asyncpg.connect(self.postgres_url)
-        try:
+        async with connect(self.postgres_url) as conn:
             row = await conn.fetchrow(
                 "SELECT site_id FROM conversations WHERE id = $1::uuid",
                 conversation_id,
             )
-        finally:
-            await conn.close()
         return None if row is None else str(row["site_id"])
 
     async def create(self, conversation_id: str, site_id: str) -> None:
         """First-turn insert. Caller already confirmed the row didn't exist."""
         await self._ensure_tables()
-        conn = await asyncpg.connect(self.postgres_url)
-        try:
+        async with connect(self.postgres_url) as conn:
             await conn.execute(
                 "INSERT INTO conversations (id, site_id) VALUES ($1::uuid, $2)",
                 conversation_id,
                 site_id,
             )
-        finally:
-            await conn.close()
 
     async def load_history(self, conversation_id: str) -> list[ModelMessage]:
         """Replay the thread in position order — returns pydantic-ai messages."""
         await self._ensure_tables()
-        conn = await asyncpg.connect(self.postgres_url)
-        try:
+        async with connect(self.postgres_url) as conn:
             rows = await conn.fetch(
                 "SELECT payload FROM conversation_messages "
                 "WHERE conversation_id = $1::uuid ORDER BY position",
                 conversation_id,
             )
-        finally:
-            await conn.close()
         if not rows:
             return []
         # Each row is a single ModelMessage serialised — concat and let the
@@ -116,8 +105,7 @@ class ConversationStore:
         if not new_messages:
             return
         await self._ensure_tables()
-        conn = await asyncpg.connect(self.postgres_url)
-        try:
+        async with connect(self.postgres_url) as conn:
             next_pos = await conn.fetchval(
                 "SELECT COALESCE(MAX(position), -1) + 1 "
                 "FROM conversation_messages WHERE conversation_id = $1::uuid",
@@ -137,5 +125,3 @@ class ConversationStore:
                 "VALUES ($1::uuid, $2, $3::jsonb)",
                 rows,
             )
-        finally:
-            await conn.close()

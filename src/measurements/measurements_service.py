@@ -10,7 +10,7 @@ import logging
 import os
 from datetime import datetime
 
-import asyncpg
+from src.db import connect
 
 from .dto import Aggregation, MeasurementPoint, MeasurementSeries
 
@@ -77,11 +77,8 @@ class MeasurementsService:
             LEFT JOIN agg a ON a.bucket = b.ts
             ORDER BY b.ts
         """  # noqa: S608  # nosec B608
-        conn = await asyncpg.connect(url)
-        try:
+        async with connect(url) as conn:
             rows = await conn.fetch(sql, start, end, site_id, device_id, measurement)
-        finally:
-            await conn.close()
         # Find unit from first non-null bucket (gap-filled rows have unit=None).
         unit = ""
         for r in rows:

@@ -1,4 +1,4 @@
-"""POST /analyst/chat — multi-turn analyst chat endpoint per HMI handoff.
+"""POST /analyst/chat — the multi-turn analyst chat endpoint.
 
 Content-negotiated: `Accept: text/event-stream` streams the turn as SSE
 (live tool-trace events then a terminal message); any other Accept
@@ -64,7 +64,7 @@ class ConversationController(Routable):
 
     @staticmethod
     def _conflict(e: SiteIdMismatchError) -> HTTPException:
-        """409 per HMI handoff Q2 — hard-invalidate; HMI mints a new id."""
+        """409 — hard-invalidate the conversation; the HMI mints a new id."""
         return HTTPException(
             status_code=409,
             detail={"code": "site_id_changed", "message": str(e)},

@@ -13,7 +13,7 @@ landed (templates can drift from the historian).
 import logging
 import os
 
-import asyncpg
+from src.db import connect
 
 from .dto import MeasurementPair, SiteDescription
 
@@ -31,8 +31,7 @@ class DescriptionService:
     async def describe(self, site_id: str) -> SiteDescription:
         """Return (device, measurement, sample_count) rows for the site."""
         url = self._postgres_url or os.environ[_TIMESERIES_URL_ENV]
-        conn = await asyncpg.connect(url)
-        try:
+        async with connect(url) as conn:
             rows = await conn.fetch(
                 "SELECT device_id, measurement, COUNT(*) AS samples "
                 "FROM measurements WHERE site_id = $1 "
@@ -40,8 +39,6 @@ class DescriptionService:
                 "ORDER BY device_id, measurement",
                 site_id,
             )
-        finally:
-            await conn.close()
         pairs = [
             MeasurementPair(
                 device_id=str(r["device_id"]),

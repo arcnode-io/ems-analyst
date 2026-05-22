@@ -1,4 +1,4 @@
-"""DTOs for /sites/{id}/forecast responses.
+"""DTOs for GET /forecast responses.
 
 Mirrors the forecasts table written by ems-analyst-model.score —
 model_name + model_version are surfaced so callers can correlate a

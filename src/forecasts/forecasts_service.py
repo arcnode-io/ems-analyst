@@ -13,7 +13,7 @@ import logging
 import os
 from datetime import datetime
 
-import asyncpg
+from src.db import connect
 
 from .dto import ForecastPoint, ForecastSeries
 
@@ -48,8 +48,7 @@ class ForecastsService:
         (settlement_point, measurement) to start.
         """
         url = self._postgres_url or os.environ[_TIMESERIES_URL_ENV]
-        conn = await asyncpg.connect(url)
-        try:
+        async with connect(url) as conn:
             rows = await conn.fetch(
                 "SELECT forecast_for, unit, value, model_name, model_version "
                 "FROM forecasts "
@@ -61,8 +60,6 @@ class ForecastsService:
                 start,
                 end,
             )
-        finally:
-            await conn.close()
         if not rows:
             return ForecastSeries(
                 site_id=site_id,

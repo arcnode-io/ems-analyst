@@ -1,4 +1,4 @@
-"""DTOs for /sites/{id}/measurements responses.
+"""DTOs for GET /measurements responses.
 
 Hourly-bucketed gap-filled series per (site, device, measurement).
 Missing buckets surface as value=None so chart renderers can draw gaps.
