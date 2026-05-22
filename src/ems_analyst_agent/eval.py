@@ -11,7 +11,6 @@ Reporting + cost math lives in eval_report.py.
 """
 
 import asyncio
-import os
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -151,7 +150,7 @@ async def run_provider(provider: Provider, server: EvalServerClient) -> Provider
 
 async def main() -> None:
     """Entrypoint: spin postgres seed → serial Ollama → Bedrock → write /tmp md."""
-    out_dir = Path(os.environ.get("EVAL_OUT_DIR", "/tmp"))  # noqa: S108  # nosec B108
+    out_dir = Path("/tmp")  # noqa: S108  # nosec B108
     out_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(UTC).strftime("%Y-%m-%d")
 

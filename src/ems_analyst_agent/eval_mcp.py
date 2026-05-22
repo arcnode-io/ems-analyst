@@ -147,7 +147,7 @@ async def run_with_mcp(provider: Provider, server: EvalServerClient) -> Provider
 async def main() -> None:
     """Serial Ollama → Bedrock with-MCP runs. Writes /tmp leaderboard."""
     pook.off()  # in case something else turned it on this process
-    out_dir = Path(os.environ.get("EVAL_OUT_DIR", "/tmp"))  # noqa: S108  # nosec B108
+    out_dir = Path("/tmp")  # noqa: S108  # nosec B108
     out_dir.mkdir(parents=True, exist_ok=True)
     async with seeded_server_client() as server:
         reports = [
