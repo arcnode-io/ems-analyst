@@ -308,7 +308,9 @@ def _sigv4_headers(method: str, url: str, body: bytes = b"") -> dict[str, str]:
     creds = session.get_credentials()
     if creds is None:
         raise RuntimeError("no AWS credentials available for Neptune sigv4")
-    region = os.environ.get("AWS_REGION", session.region_name or "us-east-1")
+    # boto3's session already resolves region from AWS_REGION → ~/.aws/config
+    # → EC2 IMDS; no need to read the env var ourselves.
+    region = session.region_name or "us-east-1"
     req = AWSRequest(method=method, url=url, data=body)
     SigV4Auth(creds, "neptune-db", region).add_auth(req)
     return dict(req.headers)
@@ -347,7 +349,7 @@ async def _neptune_write_marker(host: str) -> None:
 async def _neptune_start_load(host: str, loader_role_arn: str) -> str:
     """Kick off the Bulk Loader; return loadId."""
     url = f"https://{host}:8182/loader"
-    region = os.environ.get("AWS_REGION", "us-east-1")
+    region = boto3.Session().region_name or "us-east-1"
     body = json.dumps(
         {
             "source": NEPTUNE_S3_SOURCE,
