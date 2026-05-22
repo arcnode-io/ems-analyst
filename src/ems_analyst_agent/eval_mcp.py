@@ -122,9 +122,10 @@ async def run_with_mcp(provider: Provider, server: EvalServerClient) -> Provider
             os.environ["VECTOR_URL"] = pg.url
 
         mcp_server = create_mcp_server()
+        # ty: pydantic-ai's invariant Tool[T]/Toolset[T] generics — safe at runtime.
         agent = PydanticAgent(
             _build_model(provider),
-            tools=[
+            tools=[  # ty: ignore[invalid-argument-type]
                 Tool(query_timeseries),
                 Tool(query_markets),
                 Tool(query_energy_breakdown),
@@ -133,7 +134,12 @@ async def run_with_mcp(provider: Provider, server: EvalServerClient) -> Provider
             system_prompt=load_system_prompt(),
         )
         results: list[CaseResult] = [
-            await _run_one_with_mcp(agent, case, server) for case in MCP_CASES
+            await _run_one_with_mcp(
+                agent,  # ty: ignore[invalid-argument-type]
+                case,
+                server,
+            )
+            for case in MCP_CASES
         ]
     return ProviderReport(provider=provider, results=results)
 

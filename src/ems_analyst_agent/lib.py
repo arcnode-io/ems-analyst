@@ -130,13 +130,14 @@ class Agent:
         _assert_read_only(tools)  # ty: ignore[invalid-argument-type]
 
         # Create Pydantic AI agent with dependency injection.
-        # ty cannot reconcile the invariant Tool[T] generic; safe at runtime.
+        # ty cannot reconcile pydantic-ai's invariant Tool[T] / Toolset[T]
+        # generics (the MCP toolset is deps-agnostic); safe at runtime.
         self.agent: PydanticAgent[AgentDeps] = (
             PydanticAgent(  # ty: ignore[invalid-assignment]
                 chat_model(config.settings),
                 deps_type=AgentDeps,
                 tools=tools,  # ty: ignore[invalid-argument-type]
-                toolsets=[mcp_server],
+                toolsets=[mcp_server],  # ty: ignore[invalid-argument-type]
                 system_prompt=load_system_prompt(),
             )
         )
