@@ -260,7 +260,7 @@ class Agent:
             {"type": "text", "text": str(result.output)},
             *(
                 {"type": "artifact", "artifact": art.model_dump(by_alias=True)}
-                for art in deps.artifacts
+                for art in _presentable(deps.artifacts)
             ),
         ]
         return ChatTurnResult(
@@ -271,23 +271,36 @@ class Agent:
         )
 
 
-def _partial_turn(artifacts: list[AnalystArtifact]) -> ChatTurnResult:
-    """Assemble a turn from artifacts gathered before the tool-call cap.
+def _presentable(artifacts: list[AnalystArtifact]) -> list[AnalystArtifact]:
+    """Trim the raw tool-artifact list to what the user should actually see.
 
-    The model looped past its budget. Whatever charts it built are still
-    useful — dedupe them (a loop repeats calls), drop error artifacts,
-    and surface the rest with a brief note instead of a bare failure.
+    Two passes: dedupe identical artifacts (a loopy turn repeats tool
+    calls), then drop `table` artifacts when a chart is present —
+    describe_site / get_topology tables are discovery scaffolding the
+    agent uses to find names, not the answer once a chart was produced.
     """
     seen: set[tuple[str, str]] = set()
-    kept: list[AnalystArtifact] = []
+    deduped: list[AnalystArtifact] = []
     for art in artifacts:
-        if art.kind == "error":
-            continue
         key = (art.kind, str(getattr(art.spec, "title", "")))
         if key in seen:
             continue
         seen.add(key)
-        kept.append(art)
+        deduped.append(art)
+    has_chart = any(a.kind in ("line", "bar", "pie") for a in deduped)
+    if has_chart:
+        return [a for a in deduped if a.kind != "table"]
+    return deduped
+
+
+def _partial_turn(artifacts: list[AnalystArtifact]) -> ChatTurnResult:
+    """Assemble a turn from artifacts gathered before the tool-call cap.
+
+    The model looped past its budget. Whatever charts it built are still
+    useful — keep the presentable set, drop error artifacts, and surface
+    the rest with a brief note instead of a bare failure.
+    """
+    kept = [a for a in _presentable(artifacts) if a.kind != "error"]
     note = (
         "I ran long working through that — here's the data I gathered. "
         "Ask a follow-up if you need more."
