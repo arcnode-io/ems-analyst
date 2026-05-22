@@ -8,8 +8,9 @@ Topology Manifest from ems-device-api (or the bundled demo mock).
 from pydantic_ai import RunContext
 
 from ..device_api import DeviceApiClient, DtmView
+from ..isotime import iso_z
 from ..schemas import AnalystArtifact, TableSpec
-from .telemetry import _TelemetryDeps, _error_artifact, _now
+from ._common import _TelemetryDeps, _error_artifact
 
 
 def build_topology(dtm: DtmView) -> AnalystArtifact:
@@ -35,7 +36,7 @@ def build_topology(dtm: DtmView) -> AnalystArtifact:
                 {"key": "parent", "label": "Parent"},
             ],
             "rows": rows,
-            "dataAsOf": _now(),
+            "dataAsOf": iso_z(),
             "note": f"{len(rows)} devices in the topology",
         }
     )

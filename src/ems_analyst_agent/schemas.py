@@ -74,7 +74,8 @@ class LineSeries(_Camel):
     label: str
     color: str | None = None
     points: list[LinePoint]
-    # Reserved per HMI handoff Q5 — citation source. Always None in v1.
+    # Citation source — the MQTT topic a series traces back to. Reserved;
+    # unset until source-tracing is wired.
     source_topic: str | None = None
 
 

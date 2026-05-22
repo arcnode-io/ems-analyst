@@ -44,7 +44,7 @@ from .eval_report import (
 )
 from .prompts import load_system_prompt
 from .tools.domain_mcp import create_mcp_server
-from .tools.telemetry import _TelemetryDeps
+from .tools._common import _TelemetryDeps
 from .tools.telemetry_tools import (
     query_energy_breakdown,
     query_markets,

@@ -9,15 +9,10 @@ from datetime import UTC, datetime, timedelta
 
 from pydantic_ai import RunContext
 
+from ..isotime import iso_z
 from ..schemas import AnalystArtifact, LineSpec
 from ..server_client import ServerClient
-from .telemetry import (
-    _TelemetryDeps,
-    _error_artifact,
-    _fmt_window,
-    _now,
-    _parse_window,
-)
+from ._common import _TelemetryDeps, _error_artifact, _fmt_window, _parse_window
 
 
 async def build_forecast(
@@ -52,7 +47,7 @@ async def build_forecast(
             "xAxis": {"label": "Time", "kind": "time"},
             "yAxis": {"label": measurement, "unit": series.unit},
             "series": [{"label": "forecast", "points": points}],
-            "dataAsOf": _now(),
+            "dataAsOf": iso_z(),
             "note": note,
         }
     )

@@ -1,70 +1,16 @@
-"""Telemetry builders — Pydantic artifact factories backed by ServerClient.
+"""Timeseries + site-inventory artifact builders, backed by ServerClient.
 
-`build_timeseries` + `build_site_description` read through
-ems-analyst-server's REST API. Markets revenue + energy breakdown live
-in `site_analytics.py`. RunContext wrappers in `telemetry_tools.py`.
+`build_timeseries` charts a historian series; `build_site_description`
+tables the queryable-data inventory. Markets revenue + energy breakdown
+live in `site_analytics.py`; RunContext wrappers in `telemetry_tools.py`.
 """
 
-import re
-from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
+from ..isotime import iso_z
 from ..schemas import AnalystArtifact, LineSpec, TableSpec
 from ..server_client import Aggregation, ServerClient
-
-
-@dataclass
-class _TelemetryDeps:
-    """Structural deps shape — anything carrying these fields works.
-
-    No site_id: each deploy serves one site; the server resolves it
-    from cfg. Tools just hit the flat endpoints.
-    """
-
-    artifacts: list[AnalystArtifact] = field(default_factory=list)
-    server: object | None = None
-    device_api: object | None = None
-
-
-def _now() -> str:
-    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def _parse_window(window: str) -> timedelta:
-    """Parse ISO-8601 duration (PT24H) or shorthand (24h, 7d) -> timedelta."""
-    s = window.strip().lower()
-    iso = re.match(r"^pt(\d+)([hm])$", s)
-    if iso:
-        n, unit = int(iso.group(1)), iso.group(2)
-        return timedelta(hours=n) if unit == "h" else timedelta(minutes=n)
-    short = re.match(r"^(\d+)([hdm])$", s)
-    if short:
-        n, unit = int(short.group(1)), short.group(2)
-        if unit == "h":
-            return timedelta(hours=n)
-        if unit == "d":
-            return timedelta(days=n)
-        return timedelta(minutes=n)
-    return timedelta(hours=24)
-
-
-def _fmt_window(td: timedelta) -> str:
-    """Human window label — '7d' / '24h' / '30m'. Avoids raw timedelta repr."""
-    secs = int(td.total_seconds())
-    if secs and secs % 86400 == 0:
-        return f"{secs // 86400}d"
-    if secs and secs % 3600 == 0:
-        return f"{secs // 3600}h"
-    return f"{secs // 60}m"
-
-
-def _error_artifact(code: str, message: str) -> AnalystArtifact:
-    return AnalystArtifact.model_validate(
-        {
-            "kind": "error",
-            "spec": {"code": code, "message": message, "dataAsOf": _now()},
-        }
-    )
+from ._common import _error_artifact, _fmt_window
 
 
 async def build_timeseries(
@@ -107,7 +53,7 @@ async def build_timeseries(
             "xAxis": {"label": "Time", "kind": "time"},
             "yAxis": {"label": measurement, "unit": series.unit},
             "series": [{"label": device_id, "points": points}],
-            "dataAsOf": _now(),
+            "dataAsOf": iso_z(),
             "note": note,
         }
     )
@@ -142,7 +88,7 @@ async def build_site_description(client: ServerClient) -> AnalystArtifact:
                 {"key": "samples", "label": "Samples", "align": "right"},
             ],
             "rows": rows,
-            "dataAsOf": _now(),
+            "dataAsOf": iso_z(),
             "note": f"{len(rows)} series across {len(devices)} devices",
         }
     )

@@ -1,7 +1,7 @@
-"""Unit tests for lib helpers — pure functions, no Agent / network."""
+"""Unit tests for turn helpers — pure functions, no Agent / network."""
 
-from .lib import _presentable
 from .schemas import AnalystArtifact
+from .turn import _presentable
 
 _TS = "2026-01-01T00:00:00Z"
 

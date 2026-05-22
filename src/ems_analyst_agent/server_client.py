@@ -16,6 +16,8 @@ from typing import Final, Literal
 import httpx
 from pydantic import BaseModel
 
+from .isotime import iso_z
+
 log = logging.getLogger(__name__)
 
 _SERVER_URL_ENV: Final[str] = "SERVER_URL"
@@ -74,16 +76,6 @@ class ForecastSeries(BaseModel):
     points: list[ForecastPoint]
 
 
-def _iso_z(ts: datetime) -> str:
-    """ISO 8601 UTC with a `Z` suffix — never `+00:00`.
-
-    The whole arcnode stack is ISO UTC. The `+` in `+00:00` decodes to
-    a space in a URL query string → FastAPI rejects it as a malformed
-    datetime. The `Z` form has no `+`, so it survives URL transport.
-    """
-    return ts.isoformat().replace("+00:00", "Z")
-
-
 class ServerClient:
     """REST client for the /measurements, /description, /forecast endpoints."""
 
@@ -110,8 +102,8 @@ class ServerClient:
                 params={
                     "device_id": device_id,
                     "measurement": measurement,
-                    "start": _iso_z(start),
-                    "end": _iso_z(end),
+                    "start": iso_z(start),
+                    "end": iso_z(end),
                     "aggregation": aggregation,
                 },
             )
@@ -137,8 +129,8 @@ class ServerClient:
                 f"{self.base_url}/forecast",
                 params={
                     "measurement": measurement,
-                    "start": _iso_z(start),
-                    "end": _iso_z(end),
+                    "start": iso_z(start),
+                    "end": iso_z(end),
                 },
             )
             resp.raise_for_status()

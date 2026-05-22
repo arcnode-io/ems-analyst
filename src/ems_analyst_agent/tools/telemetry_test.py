@@ -16,7 +16,8 @@ from ..server_client import (
     MeasurementSeries,
     SiteDescription,
 )
-from .telemetry import _parse_window, build_site_description, build_timeseries
+from ._common import _parse_window
+from .telemetry import build_site_description, build_timeseries
 
 
 class _FakeServerClient:

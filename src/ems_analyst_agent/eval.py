@@ -34,7 +34,7 @@ from .eval_report import (
 )
 from .eval_seed import EvalServerClient, seeded_server_client
 from .prompts import load_system_prompt
-from .tools.telemetry import _TelemetryDeps
+from .tools._common import _TelemetryDeps
 from .tools.telemetry_tools import (
     query_energy_breakdown,
     query_markets,

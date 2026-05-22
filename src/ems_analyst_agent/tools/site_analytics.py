@@ -9,9 +9,10 @@ from datetime import UTC, datetime, timedelta
 from typing import Final, Literal
 
 from ..device_api import DtmView
+from ..isotime import iso_z
 from ..schemas import AnalystArtifact, BarSpec, PieSpec
 from ..server_client import ServerClient
-from .telemetry import _error_artifact, _fmt_window, _now
+from ._common import _error_artifact, _fmt_window
 
 _MARKET_DEVICE_ID: Final[str] = "market_01"
 _DAM_PRICE_M: Final[str] = "dam_clearing_price_usd_per_mwh"
@@ -89,7 +90,7 @@ async def build_markets(
                     "values": [round(dam_total, 2), round(rtm_total, 2)],
                 }
             ],
-            "dataAsOf": _now(),
+            "dataAsOf": iso_z(),
             "note": note,
         }
     )
@@ -175,7 +176,7 @@ async def build_energy_breakdown(
             "title": f"Energy by {by} (last {_fmt_window(window)})",
             "unit": "kWh",
             "slices": slices,
-            "dataAsOf": _now(),
+            "dataAsOf": iso_z(),
             "note": note,
         }
     )

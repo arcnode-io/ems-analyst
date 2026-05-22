@@ -10,13 +10,9 @@ from pydantic_ai import RunContext
 
 from ..device_api import DeviceApiClient
 from ..server_client import ServerClient
+from ._common import _TelemetryDeps, _parse_window
 from .site_analytics import build_energy_breakdown, build_markets
-from .telemetry import (
-    _TelemetryDeps,
-    _parse_window,
-    build_site_description,
-    build_timeseries,
-)
+from .telemetry import build_site_description, build_timeseries
 
 
 async def query_timeseries(
