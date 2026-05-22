@@ -2,7 +2,7 @@
 
 ServerClient is the agent's REST surface to server. Replaces direct
 TimeseriesClient SQL — the agent is just another client of server, same
-as HMI. Two endpoints: measurements, forecast.
+as HMI. Three endpoints: measurements, description, forecast.
 """
 
 from collections.abc import Generator
@@ -62,6 +62,41 @@ class TestServerClientMeasurements:
         assert len(actual.points) == 2
         assert actual.points[0].value == 42.5
         assert actual.points[1].value is None
+
+
+class TestServerClientDescription:
+    """AAA — /description call parses the (device, measurement) inventory."""
+
+    @pytest.mark.asyncio
+    async def test_describe_site_parses_pairs(self) -> None:
+        # Arrange
+        body = {
+            "site_id": "demo-site",
+            "pairs": [
+                {
+                    "device_id": "market_01",
+                    "measurement": "dam_clearing_price_usd_per_mwh",
+                    "samples": 712,
+                },
+                {
+                    "device_id": "bess_module_01",
+                    "measurement": "state_of_charge",
+                    "samples": 712,
+                },
+            ],
+        }
+        pook.get(f"{_BASE}/description").reply(200).json(body)
+        client = ServerClient(base_url=_BASE)
+
+        # Act
+        actual = await client.describe_site()
+
+        # Assert
+        assert actual.site_id == "demo-site"
+        assert len(actual.pairs) == 2
+        assert actual.pairs[0].device_id == "market_01"
+        assert actual.pairs[0].measurement == "dam_clearing_price_usd_per_mwh"
+        assert actual.pairs[0].samples == 712
 
 
 class TestServerClientForecast:

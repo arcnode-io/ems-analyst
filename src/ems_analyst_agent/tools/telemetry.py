@@ -1,15 +1,15 @@
 """Telemetry builders — Pydantic artifact factories backed by ServerClient.
 
-`build_timeseries` reads through ems-analyst-server's REST API. Markets
-revenue + energy breakdown live in `site_analytics.py`. RunContext
-wrappers in `telemetry_tools.py`.
+`build_timeseries` + `build_site_description` read through
+ems-analyst-server's REST API. Markets revenue + energy breakdown live
+in `site_analytics.py`. RunContext wrappers in `telemetry_tools.py`.
 """
 
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
-from ..schemas import AnalystArtifact, LineSpec
+from ..schemas import AnalystArtifact, LineSpec, TableSpec
 from ..server_client import Aggregation, ServerClient
 
 
@@ -110,4 +110,37 @@ async def build_timeseries(
     )
     return AnalystArtifact.model_validate(
         {"kind": "line", "spec": spec.model_dump(by_alias=True)}
+    )
+
+
+async def build_site_description(client: ServerClient) -> AnalystArtifact:
+    """Queryable (device, measurement) pairs — the historian inventory.
+
+    The discovery surface: what the agent can actually pull, with the
+    exact names + sample counts. Includes non-device series (e.g. market
+    price feeds) that the DTM has no device for.
+    """
+    desc = await client.describe_site()
+    if not desc.pairs:
+        return _error_artifact(
+            "not_found", "No measurements published for this site yet."
+        )
+    rows: list[dict[str, str | int]] = [
+        {"device": p.device_id, "measurement": p.measurement, "samples": p.samples}
+        for p in desc.pairs
+    ]
+    spec = TableSpec.model_validate(
+        {
+            "title": "Queryable measurements at this site",
+            "columns": [
+                {"key": "device", "label": "Device"},
+                {"key": "measurement", "label": "Measurement"},
+                {"key": "samples", "label": "Samples", "align": "right"},
+            ],
+            "rows": rows,
+            "dataAsOf": _now(),
+        }
+    )
+    return AnalystArtifact.model_validate(
+        {"kind": "table", "spec": spec.model_dump(by_alias=True)}
     )

@@ -14,17 +14,20 @@ and weather impacts on supply and demand.
 
 # Available tools
 
-- `get_topology()` — the site's device topology from ems-device-api:
-  every `device_id` and its template (`bess_module`, `compute_module`,
-  `revenue_meter`, …). **Call this FIRST** when the user names a device
-  (e.g. "what's BESS-01 SoC?") — it gives you the exact `device_id`s to
-  pass to `query_timeseries`.
+- `get_topology()` — installed equipment from ems-device-api: every
+  `device_id`, its template (`bess_module`, `compute_module`, …) and
+  parent. Use it for site-layout / "what equipment is here" questions.
+- `describe_site()` — the queryable-data inventory: every
+  `(device_id, measurement)` pair actually in the historian, with exact
+  names + sample counts. **Call this BEFORE `query_timeseries`**
+  whenever you need a measurement — never guess names like `lmp` or
+  `clearing_price`; read the exact name here (e.g.
+  `dam_clearing_price_usd_per_mwh`) and pass it verbatim. It also
+  surfaces market price series that `get_topology` has no device for.
 - `query_timeseries(device_id, measurement, window, aggregation)` —
-  hourly-bucketed timeseries from the historian. `device_id` comes from
-  `get_topology`; `measurement` is the historian name (e.g.
-  `state_of_charge`, `active_power`) — a wrong name returns an empty
-  result. window is ISO-8601 ("PT24H") or shorthand ("24h","7d").
-  aggregation: mean | max | min | last.
+  hourly-bucketed timeseries from the historian. Use the exact
+  `device_id` + `measurement` from `describe_site`. window is ISO-8601
+  ("PT24H") or shorthand ("24h","7d"). aggregation: mean|max|min|last.
 - `get_forecast(measurement, window)` — published forecast curve for a
   measurement (e.g. `dam_lmp_price`), from ems-analyst-model's nightly
   score step. Returns a line chart tagged with the model + version.

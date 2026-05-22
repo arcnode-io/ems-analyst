@@ -1,8 +1,8 @@
 """HTTP client over ems-analyst-server's deterministic REST endpoints.
 
 Principle: the agent is just another client of server, same as HMI.
-Historian + forecast reads route through /measurements and /forecast
-rather than touching Postgres directly.
+Historian + forecast reads route through /measurements, /description
+and /forecast rather than touching Postgres directly.
 
 DTOs mirror server's response shapes — defined here to avoid a cycle
 (server imports the agent for /chat).
@@ -41,6 +41,21 @@ class MeasurementSeries(BaseModel):
     points: list[MeasurementPoint]
 
 
+class MeasurementPair(BaseModel):
+    """One (device, measurement) pair + sample count at the site."""
+
+    device_id: str
+    measurement: str
+    samples: int
+
+
+class SiteDescription(BaseModel):
+    """Inventory of what's queryable at a site — the discovery payload."""
+
+    site_id: str
+    pairs: list[MeasurementPair]
+
+
 class ForecastPoint(BaseModel):
     """One (forecast_for, value) prediction."""
 
@@ -70,7 +85,7 @@ def _iso_z(ts: datetime) -> str:
 
 
 class ServerClient:
-    """REST client for the /measurements and /forecast server endpoints."""
+    """REST client for the /measurements, /description, /forecast endpoints."""
 
     def __init__(self, base_url: str | None = None) -> None:
         """Optional URL override for tests; production reads SERVER_URL."""
@@ -102,6 +117,13 @@ class ServerClient:
             )
             resp.raise_for_status()
         return MeasurementSeries.model_validate(resp.json())
+
+    async def describe_site(self) -> SiteDescription:
+        """GET /description — inventory of queryable (device, measurement) pairs."""
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as c:
+            resp = await c.get(f"{self.base_url}/description")
+            resp.raise_for_status()
+        return SiteDescription.model_validate(resp.json())
 
     async def get_forecast(
         self,

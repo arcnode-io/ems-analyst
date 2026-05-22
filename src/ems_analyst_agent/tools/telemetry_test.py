@@ -2,29 +2,44 @@
 
 ServerClient HTTP behaviour itself is pook-tested in
 tests/test_server_client.py; these tests exercise the artifact-shaping
-logic in build_timeseries.
+logic in build_timeseries + build_site_description.
 """
 
 from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from ..schemas import LineSpec
-from ..server_client import MeasurementPoint, MeasurementSeries
-from .telemetry import _parse_window, build_timeseries
+from ..schemas import LineSpec, TableSpec
+from ..server_client import (
+    MeasurementPair,
+    MeasurementPoint,
+    MeasurementSeries,
+    SiteDescription,
+)
+from .telemetry import _parse_window, build_site_description, build_timeseries
 
 
 class _FakeServerClient:
-    """Returns a canned MeasurementSeries; records calls."""
+    """Returns canned ServerClient responses; records calls."""
 
-    def __init__(self, measurements: MeasurementSeries | None = None) -> None:
+    def __init__(
+        self,
+        measurements: MeasurementSeries | None = None,
+        description: SiteDescription | None = None,
+    ) -> None:
         self._measurements = measurements
+        self._description = description
         self.calls: list[tuple[str, dict[str, object]]] = []
 
     async def get_measurements(self, **kwargs: object) -> MeasurementSeries:
         self.calls.append(("get_measurements", kwargs))
         assert self._measurements is not None
         return self._measurements
+
+    async def describe_site(self) -> SiteDescription:
+        self.calls.append(("describe_site", {}))
+        assert self._description is not None
+        return self._description
 
 
 class TestParseWindow:
@@ -97,6 +112,51 @@ class TestBuildTimeseries:
             window=timedelta(hours=1),
             aggregation="mean",
         )
+
+        # Assert
+        assert art.kind == "error"
+
+
+class TestBuildSiteDescription:
+    """AAA — build_site_description shapes a TableSpec from the inventory."""
+
+    @pytest.mark.asyncio
+    async def test_renders_inventory_table(self) -> None:
+        # Arrange — incl. a non-device market series
+        desc = SiteDescription(
+            site_id="demo-site",
+            pairs=[
+                MeasurementPair(
+                    device_id="market_01",
+                    measurement="dam_clearing_price_usd_per_mwh",
+                    samples=712,
+                ),
+                MeasurementPair(
+                    device_id="bess_module_01",
+                    measurement="state_of_charge",
+                    samples=712,
+                ),
+            ],
+        )
+        fake = _FakeServerClient(description=desc)
+
+        # Act
+        art = await build_site_description(fake)  # ty: ignore[invalid-argument-type]
+
+        # Assert
+        assert art.kind == "table"
+        assert isinstance(art.spec, TableSpec)
+        assert len(art.spec.rows) == 2
+
+    @pytest.mark.asyncio
+    async def test_empty_inventory_returns_error_artifact(self) -> None:
+        # Arrange
+        fake = _FakeServerClient(
+            description=SiteDescription(site_id="demo-site", pairs=[])
+        )
+
+        # Act
+        art = await build_site_description(fake)  # ty: ignore[invalid-argument-type]
 
         # Assert
         assert art.kind == "error"

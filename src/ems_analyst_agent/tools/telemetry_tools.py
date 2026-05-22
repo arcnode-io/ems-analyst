@@ -11,7 +11,12 @@ from pydantic_ai import RunContext
 from ..device_api import DeviceApiClient
 from ..server_client import ServerClient
 from .site_analytics import build_energy_breakdown, build_markets
-from .telemetry import _TelemetryDeps, _parse_window, build_timeseries
+from .telemetry import (
+    _TelemetryDeps,
+    _parse_window,
+    build_site_description,
+    build_timeseries,
+)
 
 
 async def query_timeseries(
@@ -37,6 +42,23 @@ async def query_timeseries(
     if art.kind == "error":
         return f"No {measurement} data for {device_id} over {window}."
     return f"Queried {measurement} on {device_id}, window={window}, agg={aggregation}."
+
+
+async def describe_site(ctx: RunContext[_TelemetryDeps]) -> str:
+    """Discover what's queryable — call this BEFORE query_timeseries.
+
+    Returns the (device, measurement) inventory as a table: the exact
+    historian names + sample counts. Use the names it returns verbatim.
+    Catches the failure mode where the model guesses 'lmp' or
+    'clearing_price' but the data publishes as
+    'dam_clearing_price_usd_per_mwh'. Covers non-device series (e.g.
+    market price feeds) that get_topology won't show.
+    """
+    client = ctx.deps.server
+    assert isinstance(client, ServerClient)
+    art = await build_site_description(client)
+    ctx.deps.artifacts.append(art)
+    return "Returned the queryable device+measurement inventory."
 
 
 async def query_markets(
