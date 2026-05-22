@@ -11,6 +11,7 @@ import os
 from dataclasses import dataclass
 
 from pydantic_ai import Agent as PydanticAgent, RunContext, Tool, UsageLimits
+from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.messages import ModelMessage
 from python_mcp_server.clients import make_embedder
 
@@ -234,12 +235,19 @@ class Agent:
             server=self.server,
             device_api=self.device_api,
         )
-        result = await self.agent.run(
-            prompt,
-            deps=deps,
-            message_history=message_history,
-            usage_limits=UsageLimits(tool_calls_limit=_TOOL_CALL_LIMIT),
-        )
+        try:
+            result = await self.agent.run(
+                prompt,
+                deps=deps,
+                message_history=message_history,
+                usage_limits=UsageLimits(tool_calls_limit=_TOOL_CALL_LIMIT),
+            )
+        except UsageLimitExceeded:
+            # The model looped past the tool-call budget. Don't discard
+            # the artifacts it did produce — return them with a note so
+            # a chart the agent already built still reaches the HMI.
+            log.warning("tool-call limit hit; returning partial artifacts")
+            return _partial_turn(deps.artifacts)
         # Store the user prompt for semantic memory across conversations.
         # Best-effort — a slow/unreachable embedder must not drop the
         # answer the agent already produced.
@@ -261,6 +269,45 @@ class Agent:
             ),
             new_messages=list(result.new_messages()),
         )
+
+
+def _partial_turn(artifacts: list[AnalystArtifact]) -> ChatTurnResult:
+    """Assemble a turn from artifacts gathered before the tool-call cap.
+
+    The model looped past its budget. Whatever charts it built are still
+    useful — dedupe them (a loop repeats calls), drop error artifacts,
+    and surface the rest with a brief note instead of a bare failure.
+    """
+    seen: set[tuple[str, str]] = set()
+    kept: list[AnalystArtifact] = []
+    for art in artifacts:
+        if art.kind == "error":
+            continue
+        key = (art.kind, str(getattr(art.spec, "title", "")))
+        if key in seen:
+            continue
+        seen.add(key)
+        kept.append(art)
+    note = (
+        "I ran long working through that — here's the data I gathered. "
+        "Ask a follow-up if you need more."
+        if kept
+        else "I couldn't finish that one — I ran out of tool budget before "
+        "reaching an answer. Try a narrower question."
+    )
+    content: list[dict[str, object]] = [
+        {"type": "text", "text": note},
+        *(
+            {"type": "artifact", "artifact": art.model_dump(by_alias=True)}
+            for art in kept
+        ),
+    ]
+    return ChatTurnResult(
+        message=AnalystMessage.model_validate(
+            {"role": "assistant", "content": content}
+        ),
+        new_messages=[],
+    )
 
 
 def _assert_read_only(tools: list[Tool[object]]) -> None:
