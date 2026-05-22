@@ -23,6 +23,12 @@ Hourly-bucketed gap-filled timeseries from the canonical `measurements` table.
 Params: `device_id` (str), `measurement` (str), `start` (ISO-8601), `end` (ISO-8601), `aggregation` (mean|max|min|last, default `mean`).
 Response: `{ site_id, device_id, measurement, unit, points: [{ ts, value|null }] }`.
 
+### GET `/description`
+
+Inventory of distinct `(device, measurement)` pairs in the `measurements` table, with sample counts. The historian-side discovery surface — agents call this to learn exact measurement names (incl. non-device series like market price feeds) before querying. Distinct from the device-api DTM, which describes installed equipment.
+
+Response: `{ site_id, pairs: [{ device_id, measurement, samples }] }`.
+
 ### GET `/forecast`
 
 Query the `forecasts` table (populated by `ems-analyst-model`'s scoring step).

@@ -1,7 +1,7 @@
 """Unit tests for DemoData — CSV-backed mock for ENV=demo.
 
 Pure: reads the bundled CSV from the ems-analyst-agent package, no DB.
-Asserts `get` returns a correctly-shaped MeasurementSeries.
+Asserts `get` and `describe` return correctly-shaped DTOs.
 """
 
 from datetime import UTC, datetime, timedelta
@@ -57,3 +57,24 @@ class TestDemoDataMeasurements:
 
         # Assert — buckets present, all None
         assert all(p.value is None for p in actual.points)
+
+
+class TestDemoDataDescribe:
+    @pytest.mark.asyncio
+    async def test_describe_includes_market_price_series(self, demo: DemoData) -> None:
+        # Act
+        actual = await demo.describe(_SITE)
+
+        # Assert — the non-device market series is discoverable here even
+        # though it has no DTM device (the reason /description exists)
+        pairs = {(p.device_id, p.measurement) for p in actual.pairs}
+        assert ("market_01", "dam_clearing_price_usd_per_mwh") in pairs
+        assert ("bess_module_01", "state_of_charge") in pairs
+
+    @pytest.mark.asyncio
+    async def test_describe_unknown_site_empty(self, demo: DemoData) -> None:
+        # Act
+        actual = await demo.describe("no-such-site")
+
+        # Assert
+        assert actual.pairs == []

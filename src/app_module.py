@@ -11,6 +11,8 @@ from src.call_api.call_api_module import CallApiModule
 from src.config import LogLevel, load_config
 from src.conversations.conversation_module import ConversationModule
 from src.demo.demo_data import DemoData
+from src.description.description_module import DescriptionModule
+from src.description.description_service import DescriptionService
 from src.forecasts.forecasts_module import ForecastsModule
 from src.measurements.measurements_module import MeasurementsModule
 from src.measurements.measurements_service import MeasurementsService
@@ -45,20 +47,23 @@ class AppModule:
     def import_module(self, app: FastAPI) -> None:
         """Register all routes — health, call_api, chat, telemetry surfaces.
 
-        ENV=demo: /measurements is served from a shared in-memory CSV
-        mock (`DemoData`) — no Postgres measurements table. forecasts +
-        chat still hit real backends.
+        ENV=demo: /measurements + /description are served from a shared
+        in-memory CSV mock (`DemoData`) — no Postgres measurements table.
+        forecasts + chat still hit real backends.
         """
         if os.environ.get("ENV") == "demo":
             demo = DemoData()
             measurements = MeasurementsModule(cast(MeasurementsService, demo))
+            description = DescriptionModule(cast(DescriptionService, demo))
         else:
             measurements = MeasurementsModule()
+            description = DescriptionModule()
         for mod in (
             AppController(),
             CallApiModule(),
             ConversationModule(),
             measurements,
+            description,
             ForecastsModule(),
         ):
             app.include_router(mod.router)

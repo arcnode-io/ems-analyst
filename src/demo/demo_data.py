@@ -1,8 +1,8 @@
-"""ENV=demo CSV-backed mock for /measurements.
+"""ENV=demo CSV-backed mock for /measurements + /description.
 
-When ENV=demo, /measurements is served from a bundled CSV in memory —
-the CSV pretends to be the DB. No Postgres measurements table, no
-seeding. The CSV ships in the ems-analyst-agent package
+When ENV=demo, /measurements + /description are served from a bundled
+CSV in memory — the CSV pretends to be the DB. No Postgres measurements
+table, no seeding. The CSV ships in the ems-analyst-agent package
 (demo_data/measurements.csv).
 
 forecasts stays on real Postgres — that's model output, not mock data.
@@ -19,6 +19,7 @@ from datetime import UTC, datetime, timedelta
 from importlib import resources
 from typing import Final
 
+from src.description.dto import MeasurementPair, SiteDescription
 from src.measurements.dto import Aggregation, MeasurementPoint, MeasurementSeries
 
 log = logging.getLogger(__name__)
@@ -63,8 +64,9 @@ class _Row:
 class DemoData:
     """In-memory CSV-backed stand-in for the measurements DB.
 
-    Injected into the measurements controller in ENV=demo — duck-typed:
-    it exposes `get` with the same signature MeasurementsService does.
+    Injected into the measurements + description controllers in
+    ENV=demo — duck-typed: `get` matches MeasurementsService, `describe`
+    matches DescriptionService.
     """
 
     def __init__(self) -> None:
@@ -139,3 +141,17 @@ class DemoData:
             unit=unit,
             points=points,
         )
+
+    async def describe(self, site_id: str) -> SiteDescription:
+        """(device, measurement, sample-count) inventory — mirrors DescriptionService."""
+        counts: dict[tuple[str, str], int] = {}
+        for row in self._rows:
+            if row.site_id != site_id:
+                continue
+            key = (row.device_id, row.measurement)
+            counts[key] = counts.get(key, 0) + 1
+        pairs = [
+            MeasurementPair(device_id=dev, measurement=meas, samples=n)
+            for (dev, meas), n in sorted(counts.items())
+        ]
+        return SiteDescription(site_id=site_id, pairs=pairs)
