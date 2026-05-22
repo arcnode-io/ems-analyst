@@ -4,6 +4,7 @@ from ipaddress import IPv4Address
 from typing import cast
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic_settings import BaseSettings
 from src.app_controller import AppController
 from src.call_api.call_api_module import CallApiModule
@@ -65,5 +66,15 @@ class AppModule:
     def create_app(self) -> FastAPI:
         """Create and configure the basic FastAPI application."""
         app = FastAPI()
+        # The HMI is served from a different origin, so a browser fires a
+        # CORS preflight before every /analyst/chat POST. Allow all —
+        # this API carries no cookies/credentials. Tighten to the HMI
+        # origin if that ever changes.
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
         self.import_module(app)
         return app
