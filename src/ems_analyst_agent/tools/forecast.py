@@ -44,6 +44,8 @@ async def build_forecast(
         f"{measurement} forecast — next {_fmt_window(window)} "
         f"({series.model_name} v{series.model_version})"
     )
+    ys = [p.value for p in series.points]
+    note = f"forecast {min(ys):g}-{max(ys):g} {series.unit}, opens at {ys[0]:g}"
     spec = LineSpec.model_validate(
         {
             "title": title,
@@ -51,6 +53,7 @@ async def build_forecast(
             "yAxis": {"label": measurement, "unit": series.unit},
             "series": [{"label": "forecast", "points": points}],
             "dataAsOf": _now(),
+            "note": note,
         }
     )
     return AnalystArtifact.model_validate(

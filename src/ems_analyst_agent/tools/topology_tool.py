@@ -36,6 +36,7 @@ def build_topology(dtm: DtmView) -> AnalystArtifact:
             ],
             "rows": rows,
             "dataAsOf": _now(),
+            "note": f"{len(rows)} devices in the topology",
         }
     )
     return AnalystArtifact.model_validate(

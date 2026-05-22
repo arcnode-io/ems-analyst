@@ -8,11 +8,17 @@ chat AND memory embeddings; one llm_provider per customer block.
 import asyncio
 import logging
 import os
+import time
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
 from pydantic_ai import Agent as PydanticAgent, RunContext, Tool, UsageLimits
 from pydantic_ai.exceptions import UsageLimitExceeded
-from pydantic_ai.messages import ModelMessage
+from pydantic_ai.messages import (
+    FunctionToolCallEvent,
+    FunctionToolResultEvent,
+    ModelMessage,
+)
 from python_mcp_server.clients import make_embedder
 
 from .config import chat_model, load_config
@@ -50,8 +56,30 @@ _FORBIDDEN_VERB_PREFIXES: tuple[str, ...] = (
 
 # Backstop against a tool-call loop — a normal turn is 3-5 calls;
 # discipline guidance in the system prompt keeps it there. Hitting this
-# raises UsageLimitExceeded → handle_turn returns an error-artifact.
+# raises UsageLimitExceeded → the turn returns its partial artifacts.
 _TOOL_CALL_LIMIT: int = 10
+
+# Human-readable action shown in the HMI live-trace per tool call —
+# never raw args (frontend handoff #2). Unknown tools fall back below.
+_TOOL_LABELS: dict[str, str] = {
+    "describe_site": "Checking what data is queryable",
+    "get_topology": "Reading site topology",
+    "query_timeseries": "Querying the site historian",
+    "get_forecast": "Pulling the published forecast",
+    "query_markets": "Computing market revenue",
+    "query_energy_breakdown": "Computing the energy mix",
+    "get_weather_forecast": "Checking the weather",
+    "get_market_data": "Querying ERCOT market data",
+    "get_energy_news": "Scanning energy news",
+}
+_DEFAULT_TOOL_LABEL: str = "Searching the knowledge base"
+
+# Tools whose result carries a one-line headline worth surfacing in the
+# toolTrace `summary` (the HMI intel feed reads it). External-data tools
+# only — internal tools have nothing headline-shaped to show.
+_SUMMARY_TOOLS: frozenset[str] = frozenset(
+    {"get_energy_news", "get_market_data", "get_weather_forecast"}
+)
 
 
 @dataclass
@@ -61,11 +89,13 @@ class ChatTurnResult:
     `message` is what the HMI / `chat_message` consumer renders.
     `new_messages` is the lossless pydantic-ai trace (incl. tool calls +
     returns) that an upstream conversation store should persist so future
-    turns can pre-load context.
+    turns can pre-load context. `status` is the turn outcome — `ok`,
+    `capped` (tool-call budget hit), or `error`.
     """
 
     message: AnalystMessage
     new_messages: list[ModelMessage]
+    status: str = "ok"
 
 
 class AgentDeps:
@@ -223,52 +253,125 @@ class Agent:
         *,
         message_history: list[ModelMessage] | None = None,
     ) -> ChatTurnResult:
-        """One agent turn — returns HMI message + raw pydantic-ai trace.
+        """One agent turn — HMI message + raw pydantic-ai trace.
 
-        The upstream server holds the multi-turn conversation. It pre-loads
-        prior pydantic-ai ModelMessages via `message_history` so the LLM
-        sees tool calls + returns from earlier turns; it persists
-        `new_messages` after this call so the next turn can replay.
+        Non-streaming callers drain `chat_turn_stream` to its terminal
+        result. The streaming SSE endpoint consumes the generator
+        directly to emit live tool-trace events.
+        """
+        async for name, payload in self.chat_turn_stream(
+            prompt, message_history=message_history
+        ):
+            if name == "result":
+                assert isinstance(payload, ChatTurnResult)
+                return payload
+        raise RuntimeError("chat_turn_stream ended without a result")
+
+    async def chat_turn_stream(
+        self,
+        prompt: str,
+        *,
+        message_history: list[ModelMessage] | None = None,
+    ) -> AsyncIterator[tuple[str, object]]:
+        """Run a turn, yielding live tool events then a terminal result.
+
+        Yields, in order:
+          ("tool_start", {seq, tool, label})            — per tool call
+          ("tool_end",   {seq, tool, outcome, ms, summary})
+          ("result", ChatTurnResult)                    — always last
+
+        The SSE endpoint frames the tool_* events live and turns the
+        result into the terminal `message` + `done` events; `chat_turn`
+        just drains to the result. `seq` pairs a start with its end.
         """
         deps = AgentDeps(
             memory_service=self.memory_service,
             server=self.server,
             device_api=self.device_api,
         )
+        pending: dict[str, tuple[int, str, float]] = {}
+        trace: list[dict[str, object]] = []
+        seq = 0
         try:
-            result = await self.agent.run(
+            async with self.agent.iter(
                 prompt,
                 deps=deps,
                 message_history=message_history,
                 usage_limits=UsageLimits(tool_calls_limit=_TOOL_CALL_LIMIT),
-            )
+            ) as run:
+                async for node in run:
+                    if not PydanticAgent.is_call_tools_node(node):
+                        continue
+                    async with node.stream(run.ctx) as events:
+                        async for event in events:
+                            if isinstance(event, FunctionToolCallEvent):
+                                seq += 1
+                                tool = event.part.tool_name
+                                pending[event.part.tool_call_id] = (
+                                    seq,
+                                    tool,
+                                    time.perf_counter(),
+                                )
+                                yield (
+                                    "tool_start",
+                                    {
+                                        "seq": seq,
+                                        "tool": tool,
+                                        "label": _TOOL_LABELS.get(
+                                            tool, _DEFAULT_TOOL_LABEL
+                                        ),
+                                    },
+                                )
+                            elif isinstance(event, FunctionToolResultEvent):
+                                started = pending.pop(event.part.tool_call_id, None)
+                                if started is None:
+                                    continue
+                                eseq, tool, t0 = started
+                                entry = _trace_entry(tool, event, eseq, t0)
+                                trace.append(entry)
+                                yield "tool_end", entry
+                await self._store_prompt_memory(prompt)
+                content: list[dict[str, object]] = [
+                    {"type": "text", "text": str(run.result.output)},
+                    *(
+                        {
+                            "type": "artifact",
+                            "artifact": art.model_dump(by_alias=True),
+                        }
+                        for art in _presentable(deps.artifacts)
+                    ),
+                ]
+                message = AnalystMessage.model_validate(
+                    {
+                        "role": "assistant",
+                        "content": content,
+                        "toolTrace": [_public_trace(t) for t in trace],
+                    }
+                )
+                yield (
+                    "result",
+                    ChatTurnResult(
+                        message=message,
+                        new_messages=list(run.result.new_messages()),
+                        status="ok",
+                    ),
+                )
         except UsageLimitExceeded:
-            # The model looped past the tool-call budget. Don't discard
-            # the artifacts it did produce — return them with a note so
-            # a chart the agent already built still reaches the HMI.
+            # Model looped past the budget — surface partial artifacts.
             log.warning("tool-call limit hit; returning partial artifacts")
-            return _partial_turn(deps.artifacts)
-        # Store the user prompt for semantic memory across conversations.
-        # Best-effort — a slow/unreachable embedder must not drop the
-        # answer the agent already produced.
+            yield "result", _partial_turn(deps.artifacts, trace)
+
+    async def _store_prompt_memory(self, prompt: str) -> None:
+        """Persist the prompt for semantic recall — best-effort.
+
+        A slow/unreachable embedder must not drop the answer the agent
+        already produced.
+        """
         try:
             embedding = await self.memory_service.generate_embedding(prompt)
             await self.memory_service.store_memory(f"User stated: {prompt}", embedding)
         except Exception:
             log.warning("memory store skipped — embedder/store down", exc_info=True)
-        content: list[dict[str, object]] = [
-            {"type": "text", "text": str(result.output)},
-            *(
-                {"type": "artifact", "artifact": art.model_dump(by_alias=True)}
-                for art in _presentable(deps.artifacts)
-            ),
-        ]
-        return ChatTurnResult(
-            message=AnalystMessage.model_validate(
-                {"role": "assistant", "content": content}
-            ),
-            new_messages=list(result.new_messages()),
-        )
 
 
 def _presentable(artifacts: list[AnalystArtifact]) -> list[AnalystArtifact]:
@@ -293,7 +396,43 @@ def _presentable(artifacts: list[AnalystArtifact]) -> list[AnalystArtifact]:
     return deduped
 
 
-def _partial_turn(artifacts: list[AnalystArtifact]) -> ChatTurnResult:
+def _result_summary(tool: str, event: FunctionToolResultEvent) -> str | None:
+    """One-line headline from an external tool's result; None otherwise.
+
+    Only the external-data tools carry something headline-shaped — the
+    HMI intel feed surfaces it. First non-empty line, trimmed.
+    """
+    if tool not in _SUMMARY_TOOLS:
+        return None
+    text = str(getattr(event.part, "content", "")).strip()
+    if not text:
+        return None
+    return text.splitlines()[0].strip()[:140] or None
+
+
+def _trace_entry(
+    tool: str, event: FunctionToolResultEvent, seq: int, t0: float
+) -> dict[str, object]:
+    """Build a trace row from a completed tool call (carries stream `seq`)."""
+    outcome = "ok" if getattr(event.part, "part_kind", "") == "tool-return" else "error"
+    return {
+        "seq": seq,
+        "tool": tool,
+        "label": _TOOL_LABELS.get(tool, _DEFAULT_TOOL_LABEL),
+        "outcome": outcome,
+        "ms": int((time.perf_counter() - t0) * 1000),
+        "summary": _result_summary(tool, event),
+    }
+
+
+def _public_trace(entry: dict[str, object]) -> dict[str, object]:
+    """toolTrace row for the AnalystMessage — drops the stream-only `seq`."""
+    return {k: v for k, v in entry.items() if k != "seq"}
+
+
+def _partial_turn(
+    artifacts: list[AnalystArtifact], trace: list[dict[str, object]]
+) -> ChatTurnResult:
     """Assemble a turn from artifacts gathered before the tool-call cap.
 
     The model looped past its budget. Whatever charts it built are still
@@ -317,9 +456,14 @@ def _partial_turn(artifacts: list[AnalystArtifact]) -> ChatTurnResult:
     ]
     return ChatTurnResult(
         message=AnalystMessage.model_validate(
-            {"role": "assistant", "content": content}
+            {
+                "role": "assistant",
+                "content": content,
+                "toolTrace": [_public_trace(t) for t in trace],
+            }
         ),
         new_messages=[],
+        status="capped",
     )
 
 

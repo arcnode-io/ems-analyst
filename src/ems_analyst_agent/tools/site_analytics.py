@@ -76,6 +76,8 @@ async def build_markets(
         rtm_disp = await _bucketed_series(client, dev, _RTM_DISPATCH_M, start, end)
         dam_total += _revenue(dam_disp, dam_price)
         rtm_total += _revenue(rtm_disp, rtm_price)
+    leader = "DAM" if dam_total >= rtm_total else "RTM"
+    note = f"DAM ${dam_total:,.0f}, RTM ${rtm_total:,.0f} — {leader} leads"
     spec = BarSpec.model_validate(
         {
             "title": f"Revenue by market (last {_fmt_window(window)})",
@@ -88,6 +90,7 @@ async def build_markets(
                 }
             ],
             "dataAsOf": _now(),
+            "note": note,
         }
     )
     return AnalystArtifact.model_validate(
@@ -163,12 +166,17 @@ async def build_energy_breakdown(
             "not_found",
             f"No energy {by} data over the last {_fmt_window(window)}.",
         )
+    total = sum(s["value"] for s in slices if isinstance(s["value"], float))
+    top = max(slices, key=lambda s: s["value"])
+    share = 100.0 * float(top["value"]) / total if total else 0.0
+    note = f"{top['label']} {top['value']:g} kWh ({share:.0f}%) — largest of {total:g}"
     spec = PieSpec.model_validate(
         {
             "title": f"Energy by {by} (last {_fmt_window(window)})",
             "unit": "kWh",
             "slices": slices,
             "dataAsOf": _now(),
+            "note": note,
         }
     )
     return AnalystArtifact.model_validate(

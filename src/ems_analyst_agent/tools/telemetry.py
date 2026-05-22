@@ -96,6 +96,8 @@ async def build_timeseries(
         {"x": p.ts.isoformat().replace("+00:00", "Z"), "y": p.value}
         for p in series.points
     ]
+    ys = [p.value for p in series.points if p.value is not None]
+    note = f"{min(ys):g}-{max(ys):g} {series.unit}, latest {ys[-1]:g}" if ys else None
     spec = LineSpec.model_validate(
         {
             "title": (
@@ -106,6 +108,7 @@ async def build_timeseries(
             "yAxis": {"label": measurement, "unit": series.unit},
             "series": [{"label": device_id, "points": points}],
             "dataAsOf": _now(),
+            "note": note,
         }
     )
     return AnalystArtifact.model_validate(
@@ -129,6 +132,7 @@ async def build_site_description(client: ServerClient) -> AnalystArtifact:
         {"device": p.device_id, "measurement": p.measurement, "samples": p.samples}
         for p in desc.pairs
     ]
+    devices = {p.device_id for p in desc.pairs}
     spec = TableSpec.model_validate(
         {
             "title": "Queryable measurements at this site",
@@ -139,6 +143,7 @@ async def build_site_description(client: ServerClient) -> AnalystArtifact:
             ],
             "rows": rows,
             "dataAsOf": _now(),
+            "note": f"{len(rows)} series across {len(devices)} devices",
         }
     )
     return AnalystArtifact.model_validate(

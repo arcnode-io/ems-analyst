@@ -112,12 +112,19 @@ class PieSlice(_Camel):
 
 
 class ToolTraceEntry(_Camel):
-    """One row of the optional toolTrace for transparency UIs."""
+    """One row of toolTrace — what the live-trace UI renders per tool call.
+
+    `label` is a human-readable action ("Querying site historian"), not
+    raw args. `summary` is a one-line result headline, set only for the
+    external-data tools (news / market data / weather) — the intel feed
+    surfaces it; None for internal tools.
+    """
 
     tool: str
-    args: dict[str, object]
+    label: str
     outcome: Literal["ok", "error"]
     ms: int
+    summary: str | None = None
 
 
 # ── artifact specs ─────────────────────────────────────────────────────────
@@ -132,6 +139,9 @@ class LineSpec(_Camel):
     series: list[LineSeries]
     thresholds: list[LineThreshold] | None = None
     data_as_of: str
+    # One-line "Insight" — terse precise-stat takeaway (range, latest,
+    # delta). The conversational reply carries the "why"; this is numbers.
+    note: str | None = None
 
 
 class BarSpec(_Camel):
@@ -143,6 +153,7 @@ class BarSpec(_Camel):
     series: list[BarSeries]
     stacked: bool | None = None
     data_as_of: str
+    note: str | None = None  # one-line "Insight" — see LineSpec.note
 
 
 class TableSpec(_Camel):
@@ -153,6 +164,7 @@ class TableSpec(_Camel):
     rows: list[dict[str, str | float | None]]
     row_severity: list[RowSeverity | None] | None = None
     data_as_of: str
+    note: str | None = None  # one-line "Insight" — see LineSpec.note
 
 
 class PieSpec(_Camel):
@@ -162,6 +174,7 @@ class PieSpec(_Camel):
     unit: str
     slices: list[PieSlice]
     data_as_of: str
+    note: str | None = None  # one-line "Insight" — see LineSpec.note
 
 
 class ToolError(_Camel):
