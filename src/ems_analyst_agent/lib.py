@@ -10,7 +10,7 @@ import logging
 import os
 from dataclasses import dataclass
 
-from pydantic_ai import Agent as PydanticAgent, RunContext, Tool
+from pydantic_ai import Agent as PydanticAgent, RunContext, Tool, UsageLimits
 from pydantic_ai.messages import ModelMessage
 from python_mcp_server.clients import make_embedder
 
@@ -46,6 +46,11 @@ _FORBIDDEN_VERB_PREFIXES: tuple[str, ...] = (
     "create_",
     "update_",
 )
+
+# Backstop against a tool-call loop — a normal turn is 3-5 calls;
+# discipline guidance in the system prompt keeps it there. Hitting this
+# raises UsageLimitExceeded → handle_turn returns an error-artifact.
+_TOOL_CALL_LIMIT: int = 10
 
 
 @dataclass
@@ -230,7 +235,10 @@ class Agent:
             device_api=self.device_api,
         )
         result = await self.agent.run(
-            prompt, deps=deps, message_history=message_history
+            prompt,
+            deps=deps,
+            message_history=message_history,
+            usage_limits=UsageLimits(tool_calls_limit=_TOOL_CALL_LIMIT),
         )
         # Store the user prompt for semantic memory across conversations.
         # Best-effort — a slow/unreachable embedder must not drop the
