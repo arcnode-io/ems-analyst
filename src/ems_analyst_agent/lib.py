@@ -6,6 +6,7 @@ chat AND memory embeddings; one llm_provider per customer block.
 """
 
 import asyncio
+import logging
 import os
 from dataclasses import dataclass
 
@@ -30,6 +31,8 @@ from .tools.telemetry_tools import (
 )
 from .tools.topology_tool import get_topology
 from .tools.weather_api import get_weather_forecast
+
+log = logging.getLogger(__name__)
 
 # Constructor-time guard so we never accidentally register a mutating
 # tool on the analyst — frontend handoff Q2 (read-only by design).
@@ -151,21 +154,30 @@ class Agent:
         # Register dynamic system prompt for memory injection
         @self.agent.system_prompt
         async def inject_memories(ctx: RunContext[AgentDeps]) -> str:
-            """Retrieve and inject relevant memories into system prompt."""
-            if ctx.prompt:
+            """Retrieve and inject relevant memories into the system prompt.
+
+            Best-effort — semantic recall is an enhancement, not core. A
+            slow or unreachable embedder/vector store skips memory
+            injection rather than failing the user's whole turn.
+            """
+            if not ctx.prompt:
+                return ""
+            try:
                 query_embedding = await ctx.deps.memory_service.generate_embedding(
                     str(ctx.prompt)
                 )
                 memories = await ctx.deps.memory_service.search_memories(
                     query_embedding, limit=3
                 )
-
-                if memories:
-                    return (
-                        "Relevant memories from previous conversations:\n"
-                        + "\n".join(f"- {memory}" for memory in memories)
-                    )
-
+            except Exception:
+                log.warning(
+                    "memory recall skipped — embedder/store down", exc_info=True
+                )
+                return ""
+            if memories:
+                return "Relevant memories from previous conversations:\n" + "\n".join(
+                    f"- {memory}" for memory in memories
+                )
             return ""
 
     def chat(self, prompt: str) -> str:
@@ -218,8 +230,13 @@ class Agent:
             prompt, deps=deps, message_history=message_history
         )
         # Store the user prompt for semantic memory across conversations.
-        embedding = await self.memory_service.generate_embedding(prompt)
-        await self.memory_service.store_memory(f"User stated: {prompt}", embedding)
+        # Best-effort — a slow/unreachable embedder must not drop the
+        # answer the agent already produced.
+        try:
+            embedding = await self.memory_service.generate_embedding(prompt)
+            await self.memory_service.store_memory(f"User stated: {prompt}", embedding)
+        except Exception:
+            log.warning("memory store skipped — embedder/store down", exc_info=True)
         content: list[dict[str, object]] = [
             {"type": "text", "text": str(result.output)},
             *(
