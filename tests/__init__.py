@@ -1,1 +1,1 @@
-"""Test package for python-mcp-server template."""
+"""Test package for ems-analyst-mcp template."""

@@ -19,7 +19,7 @@ async def test_connect_unquotes_password_and_uses_kwargs() -> None:
     # Arrange — fake password 't!st@x' encoded as 't%21st%40x'
     url = "postgres://alice:t%21st%40x@host.example:5432/db1"
     with patch(
-        "src.python_mcp_server.clients.rag_client.asyncpg.connect"
+        "src.ems_analyst_mcp.clients.rag_client.asyncpg.connect"
     ) as mock_connect:
         mock_connect.return_value = AsyncMock()
 
@@ -68,7 +68,7 @@ async def test_rag_client_search_fuses_cosine_and_bm25_rankings() -> None:
     cosine_rows = [_row("doc1"), _row("doc2")]
     bm25_rows = [_row("doc1"), _row("doc3")]
     with patch(
-        "src.python_mcp_server.clients.rag_client.asyncpg.connect"
+        "src.ems_analyst_mcp.clients.rag_client.asyncpg.connect"
     ) as mock_connect:
         mock_conn = AsyncMock()
         mock_connect.return_value = mock_conn

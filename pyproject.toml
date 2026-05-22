@@ -1,5 +1,5 @@
 [project]
-name = "python-mcp-server"
+name = "ems-analyst-mcp"
 version = "1.0.0-beta"
 description = "MCP server with Graphiti knowledge graph and RAG search for accurate AI responses"
 requires-python = "==3.13.2"
@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [project.scripts]
-python-mcp-server = "python_mcp_server.__main__:main"
+ems-analyst-mcp = "ems_analyst_mcp.__main__:main"
 
 [tool.uv]
 package = true
@@ -56,7 +56,7 @@ dev = [
 # Bundle cfg.defaults.yml in the wheel so config.load_config can find it
 # when this package is consumed as a git dep from another project's venv
 # (the repo root isn't accessible there).
-python_mcp_server = ["cfg.defaults.yml"]
+ems_analyst_mcp = ["cfg.defaults.yml"]
 
 [tool.poe.tasks]
 depcheck = "deptry . --per-rule-ignores DEP004=pytest,DEP002=asyncpg|starlette"

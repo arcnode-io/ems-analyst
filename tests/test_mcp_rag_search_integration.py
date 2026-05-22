@@ -26,14 +26,14 @@ import pytest
 from pgvector.asyncpg import register_vector
 from testcontainers.postgres import PostgresContainer
 
-from src.python_mcp_server.clients.embedder import EMBEDDING_DIM
-from src.python_mcp_server.config import (
+from src.ems_analyst_mcp.clients.embedder import EMBEDDING_DIM
+from src.ems_analyst_mcp.config import (
     Config,
     LogLevel,
     OllamaSettings,
     load_config,
 )
-from src.python_mcp_server.server import create_server
+from src.ems_analyst_mcp.server import create_server
 from tests.fixtures.containers import postgres_pgvector  # noqa: F401  pytest fixture
 
 # Ollama Qwen3 returns 2560d; embedder truncates to 1024. Build matching

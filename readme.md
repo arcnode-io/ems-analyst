@@ -1,4 +1,4 @@
-# Python MCP Server 🧠
+# EMS Analyst MCP 🧠
 
 ![](https://img.shields.io/gitlab/pipeline-status/arcnode-io/ems-analyst-mcp?branch=main&logo=gitlab)
 ![](https://gitlab.com/arcnode-io/ems-analyst-mcp/badges/main/coverage.svg)
@@ -39,9 +39,9 @@ Prompt: `answer_with_verification`.
 ## Quick Start
 
 ```bash
-pip install python-mcp-server
+pip install ems-analyst-mcp
 # or
-uvx python-mcp-server
+uvx ems-analyst-mcp
 ```
 
 ## Configuration
@@ -82,8 +82,8 @@ export ENV="local"
 ### Programmatic usage
 
 ```python
-from python_mcp_server import create_server
-from python_mcp_server.config import Config, Neo4jConfig, PostgresConfig, LogLevel
+from ems_analyst_mcp import create_server
+from ems_analyst_mcp.config import Config, Neo4jConfig, PostgresConfig, LogLevel
 
 config = Config(
     log_level=LogLevel.INFO,
@@ -108,7 +108,7 @@ server = create_server(
 
 ```bash
 export NEO4J_PASSWORD=... POSTGRES_PASSWORD=... OPENAI_API_KEY=...
-claude mcp add domain-expert -- uvx python-mcp-server
+claude mcp add domain-expert -- uvx ems-analyst-mcp
 ```
 
 ### Claude Desktop (`claude_desktop_config.json`)
@@ -118,7 +118,7 @@ claude mcp add domain-expert -- uvx python-mcp-server
   "mcpServers": {
     "knowledge-graph": {
       "command": "uvx",
-      "args": ["python-mcp-server"],
+      "args": ["ems-analyst-mcp"],
       "env": {
         "NEO4J_PASSWORD": "...",
         "POSTGRES_PASSWORD": "...",
@@ -135,7 +135,7 @@ claude mcp add domain-expert -- uvx python-mcp-server
 from pydantic_ai import Agent
 from pydantic_ai.mcp import MCPServerStdio
 
-mcp = MCPServerStdio("uvx", "python-mcp-server")
+mcp = MCPServerStdio("uvx", "ems-analyst-mcp")
 agent = Agent(toolsets=[mcp])
 result = await agent.run("What connects Tesla and battery technology?")
 ```
@@ -177,13 +177,13 @@ cp template-secrets.env .env  # fill in secrets
 
 uv run poe checks   # deptry, black, ruff, mypy, bandit, pip-audit
 uv run poe cover    # tests with coverage
-uv run python-mcp-server
+uv run ems-analyst-mcp
 ```
 
 ## Architecture
 
 ```
-src/python_mcp_server/
+src/ems_analyst_mcp/
 ├── clients/
 │   ├── embedder.py         # OpenAI embeddings (injected)
 │   ├── graphiti_client.py  # Neo4j via Graphiti

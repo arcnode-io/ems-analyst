@@ -498,6 +498,81 @@ wheels = [
 ]
 
 [[package]]
+name = "ems-analyst-mcp"
+version = "1.0.0b0"
+source = { editable = "." }
+dependencies = [
+    { name = "asyncpg" },
+    { name = "boto3" },
+    { name = "botocore" },
+    { name = "graphiti-core", extra = ["neptune"] },
+    { name = "httpx" },
+    { name = "mcp", extra = ["cli"] },
+    { name = "neo4j" },
+    { name = "pgvector" },
+    { name = "pydantic" },
+    { name = "pyyaml" },
+    { name = "starlette" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "asyncpg-stubs" },
+    { name = "bandit" },
+    { name = "black", extra = ["d"] },
+    { name = "boto3-stubs", extra = ["bedrock-runtime"] },
+    { name = "deptry" },
+    { name = "mypy-boto3-bedrock-runtime" },
+    { name = "pip" },
+    { name = "pip-audit" },
+    { name = "poethepoet" },
+    { name = "pook" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+    { name = "ruff" },
+    { name = "testcontainers", extra = ["neo4j"] },
+    { name = "ty" },
+    { name = "types-pyyaml" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "asyncpg", specifier = ">=0.29.0" },
+    { name = "boto3", specifier = ">=1.35.0" },
+    { name = "botocore", specifier = ">=1.35.0" },
+    { name = "graphiti-core", extras = ["neptune"], specifier = ">=0.3.0" },
+    { name = "httpx", specifier = ">=0.27.0" },
+    { name = "mcp", extras = ["cli"], specifier = ">=1.0.0" },
+    { name = "neo4j", specifier = ">=6.1.0" },
+    { name = "pgvector", specifier = ">=0.3.0" },
+    { name = "pydantic", specifier = ">=2.9.2" },
+    { name = "pyyaml", specifier = ">=6.0.0" },
+    { name = "starlette", specifier = ">=0.49.1" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "asyncpg-stubs", specifier = ">=0.31" },
+    { name = "bandit", specifier = ">=1.8.0" },
+    { name = "black", extras = ["d"], specifier = ">=26.3.1" },
+    { name = "boto3-stubs", extras = ["bedrock-runtime"], specifier = ">=1.35.0" },
+    { name = "deptry", specifier = ">=0.23.0" },
+    { name = "mypy-boto3-bedrock-runtime", specifier = ">=1.35.0" },
+    { name = "pip", specifier = ">=26.1" },
+    { name = "pip-audit", specifier = ">=2.6.1" },
+    { name = "poethepoet", specifier = ">=0.32.0" },
+    { name = "pook", specifier = ">=2.1.4" },
+    { name = "pytest", specifier = ">=8.3.4" },
+    { name = "pytest-asyncio", specifier = ">=0.25.0" },
+    { name = "pytest-cov", specifier = ">=6.0.0" },
+    { name = "ruff", specifier = ">=0.8.4" },
+    { name = "testcontainers", extras = ["neo4j", "postgres"], specifier = ">=4.14.2" },
+    { name = "ty", specifier = ">=0.0.18" },
+    { name = "types-pyyaml", specifier = ">=6.0" },
+]
+
+[[package]]
 name = "events"
 version = "0.5"
 source = { registry = "https://pypi.org/simple" }
@@ -1483,81 +1558,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/82/ed/0301aeeac3e5353ef3d94b6ec08bbcabd04a72018415dcb29e588514bba8/python_dotenv-1.2.2.tar.gz", hash = "sha256:2c371a91fbd7ba082c2c1dc1f8bf89ca22564a087c2c287cd9b662adde799cf3", size = 50135, upload-time = "2026-03-01T16:00:26.196Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/0b/d7/1959b9648791274998a9c3526f6d0ec8fd2233e4d4acce81bbae76b44b2a/python_dotenv-1.2.2-py3-none-any.whl", hash = "sha256:1d8214789a24de455a8b8bd8ae6fe3c6b69a5e3d64aa8a8e5d68e694bbcb285a", size = 22101, upload-time = "2026-03-01T16:00:25.09Z" },
-]
-
-[[package]]
-name = "python-mcp-server"
-version = "1.0.0b0"
-source = { editable = "." }
-dependencies = [
-    { name = "asyncpg" },
-    { name = "boto3" },
-    { name = "botocore" },
-    { name = "graphiti-core", extra = ["neptune"] },
-    { name = "httpx" },
-    { name = "mcp", extra = ["cli"] },
-    { name = "neo4j" },
-    { name = "pgvector" },
-    { name = "pydantic" },
-    { name = "pyyaml" },
-    { name = "starlette" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "asyncpg-stubs" },
-    { name = "bandit" },
-    { name = "black", extra = ["d"] },
-    { name = "boto3-stubs", extra = ["bedrock-runtime"] },
-    { name = "deptry" },
-    { name = "mypy-boto3-bedrock-runtime" },
-    { name = "pip" },
-    { name = "pip-audit" },
-    { name = "poethepoet" },
-    { name = "pook" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-cov" },
-    { name = "ruff" },
-    { name = "testcontainers", extra = ["neo4j"] },
-    { name = "ty" },
-    { name = "types-pyyaml" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "asyncpg", specifier = ">=0.29.0" },
-    { name = "boto3", specifier = ">=1.35.0" },
-    { name = "botocore", specifier = ">=1.35.0" },
-    { name = "graphiti-core", extras = ["neptune"], specifier = ">=0.3.0" },
-    { name = "httpx", specifier = ">=0.27.0" },
-    { name = "mcp", extras = ["cli"], specifier = ">=1.0.0" },
-    { name = "neo4j", specifier = ">=6.1.0" },
-    { name = "pgvector", specifier = ">=0.3.0" },
-    { name = "pydantic", specifier = ">=2.9.2" },
-    { name = "pyyaml", specifier = ">=6.0.0" },
-    { name = "starlette", specifier = ">=0.49.1" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "asyncpg-stubs", specifier = ">=0.31" },
-    { name = "bandit", specifier = ">=1.8.0" },
-    { name = "black", extras = ["d"], specifier = ">=26.3.1" },
-    { name = "boto3-stubs", extras = ["bedrock-runtime"], specifier = ">=1.35.0" },
-    { name = "deptry", specifier = ">=0.23.0" },
-    { name = "mypy-boto3-bedrock-runtime", specifier = ">=1.35.0" },
-    { name = "pip", specifier = ">=26.1" },
-    { name = "pip-audit", specifier = ">=2.6.1" },
-    { name = "poethepoet", specifier = ">=0.32.0" },
-    { name = "pook", specifier = ">=2.1.4" },
-    { name = "pytest", specifier = ">=8.3.4" },
-    { name = "pytest-asyncio", specifier = ">=0.25.0" },
-    { name = "pytest-cov", specifier = ">=6.0.0" },
-    { name = "ruff", specifier = ">=0.8.4" },
-    { name = "testcontainers", extras = ["neo4j", "postgres"], specifier = ">=4.14.2" },
-    { name = "ty", specifier = ">=0.0.18" },
-    { name = "types-pyyaml", specifier = ">=6.0" },
 ]
 
 [[package]]

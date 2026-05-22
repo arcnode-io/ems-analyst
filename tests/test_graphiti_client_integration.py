@@ -17,8 +17,8 @@ import pook
 import pytest
 from testcontainers.neo4j import Neo4jContainer
 
-from src.python_mcp_server.clients.graphiti_client import GraphitiClient
-from src.python_mcp_server.config import (
+from src.ems_analyst_mcp.clients.graphiti_client import GraphitiClient
+from src.ems_analyst_mcp.config import (
     Config,
     LogLevel,
     Neo4jGraph,

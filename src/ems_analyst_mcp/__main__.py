@@ -2,8 +2,8 @@
 
 Two commands:
 
-  python -m python_mcp_server         # start MCP stdio server (no seed)
-  python -m python_mcp_server seed    # one-shot: run seed_all and exit
+  python -m ems_analyst_mcp         # start MCP stdio server (no seed)
+  python -m ems_analyst_mcp seed    # one-shot: run seed_all and exit
 
 Seed is a SEPARATE process from the MCP child for a reason — pydantic-ai
 spawns/kills the MCP child per request, so a background seed inside the

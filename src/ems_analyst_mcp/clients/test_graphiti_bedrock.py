@@ -35,7 +35,7 @@ class TestBedrockEmbedderClient:
         """create(str) -> the embedding field from Titan's response body."""
         # Arrange
         with patch(
-            "python_mcp_server.clients.graphiti_bedrock.boto3.client"
+            "ems_analyst_mcp.clients.graphiti_bedrock.boto3.client"
         ) as mock_client:
             mock_client.return_value.invoke_model.return_value = _stub_invoke_response(
                 {"embedding": [0.1, 0.2, 0.3]}
@@ -59,7 +59,7 @@ class TestBedrockLLMClient:
         from graphiti_core.prompts.models import Message
 
         with patch(
-            "python_mcp_server.clients.graphiti_bedrock.boto3.client"
+            "ems_analyst_mcp.clients.graphiti_bedrock.boto3.client"
         ) as mock_client:
             mock_client.return_value.invoke_model.return_value = _stub_invoke_response(
                 {
@@ -89,7 +89,7 @@ class TestBedrockLLMClient:
             answer: str
 
         with patch(
-            "python_mcp_server.clients.graphiti_bedrock.boto3.client"
+            "ems_analyst_mcp.clients.graphiti_bedrock.boto3.client"
         ) as mock_client:
             mock_client.return_value.invoke_model.return_value = _stub_invoke_response(
                 {

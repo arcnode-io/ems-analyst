@@ -5,16 +5,16 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from src.python_mcp_server.clients.embedder import Embedder
-from src.python_mcp_server.clients.graphiti_client import GraphitiClient
-from src.python_mcp_server.clients.rag_client import RAGClient
-from src.python_mcp_server.config import (
+from src.ems_analyst_mcp.clients.embedder import Embedder
+from src.ems_analyst_mcp.clients.graphiti_client import GraphitiClient
+from src.ems_analyst_mcp.clients.rag_client import RAGClient
+from src.ems_analyst_mcp.config import (
     Config,
     LogLevel,
     Neo4jGraph,
     OllamaSettings,
 )
-from src.python_mcp_server.server import create_server
+from src.ems_analyst_mcp.server import create_server
 
 
 def _test_config() -> Config:
@@ -70,7 +70,7 @@ class TestRAGClient:
         """Test that RAG client can perform vector search."""
         # Arrange
         with patch(
-            "src.python_mcp_server.clients.rag_client.asyncpg.connect"
+            "src.ems_analyst_mcp.clients.rag_client.asyncpg.connect"
         ) as mock_connect:
             mock_conn = AsyncMock()
             mock_connect.return_value = mock_conn
@@ -105,7 +105,7 @@ class TestRAGClient:
         """Test that RAG client queries energy_embeddings table with proper schema."""
         # Arrange
         with patch(
-            "src.python_mcp_server.clients.rag_client.asyncpg.connect"
+            "src.ems_analyst_mcp.clients.rag_client.asyncpg.connect"
         ) as mock_connect:
             mock_conn = AsyncMock()
             mock_connect.return_value = mock_conn
@@ -191,7 +191,7 @@ class TestMCPServer:
                 "os.environ", {"GRAPH_URL": "neo4j+s://u:p@host:7687"}, clear=False
             ),
             patch(
-                "src.python_mcp_server.clients.graphiti_client.Graphiti"
+                "src.ems_analyst_mcp.clients.graphiti_client.Graphiti"
             ) as mock_graphiti_class,
         ):
             mock_graphiti = AsyncMock()
@@ -284,7 +284,7 @@ class TestMCPServer:
                 "os.environ", {"GRAPH_URL": "neo4j+s://u:p@host:7687"}, clear=False
             ),
             patch(
-                "src.python_mcp_server.clients.graphiti_client.Graphiti"
+                "src.ems_analyst_mcp.clients.graphiti_client.Graphiti"
             ) as mock_graphiti_class,
         ):
             mock_graphiti = AsyncMock()

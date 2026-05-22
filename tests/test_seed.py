@@ -24,8 +24,8 @@ from neo4j import AsyncGraphDatabase
 from testcontainers.neo4j import Neo4jContainer
 from testcontainers.postgres import PostgresContainer
 
-from src.python_mcp_server.clients.graphiti_client import _split_neo4j_url
-from src.python_mcp_server.seed import (
+from src.ems_analyst_mcp.clients.graphiti_client import _split_neo4j_url
+from src.ems_analyst_mcp.seed import (
     GRAPH_MARKER_SLICE,
     VECTOR_MARKER_SLICE,
     seed_graph_neo4j,
@@ -130,7 +130,7 @@ async def test_seed_graph_neo4j_loads_then_skips_on_rerun(
 
     # Act — first call hits the cypher script
     with patch(
-        "src.python_mcp_server.seed.urllib.request.urlopen",
+        "src.ems_analyst_mcp.seed.urllib.request.urlopen",
         return_value=_gzipped_response(CYPHER_SCRIPT),
     ):
         await seed_graph_neo4j(seed_url)
@@ -155,7 +155,7 @@ async def test_seed_graph_neo4j_loads_then_skips_on_rerun(
 
         # Act — second call should NOT re-run the cypher (urlopen unused)
         with patch(
-            "src.python_mcp_server.seed.urllib.request.urlopen",
+            "src.ems_analyst_mcp.seed.urllib.request.urlopen",
             side_effect=AssertionError("urlopen must not be called on idempotent skip"),
         ):
             await seed_graph_neo4j(seed_url)
@@ -187,7 +187,7 @@ async def test_seed_graph_neo4j_partial_failure_rolls_back_then_retries_clean(
 
     with (
         patch(
-            "src.python_mcp_server.seed.urllib.request.urlopen",
+            "src.ems_analyst_mcp.seed.urllib.request.urlopen",
             return_value=_gzipped_response(PARTIAL_FAIL_CYPHER),
         ),
         pytest.raises(CypherSyntaxError),
@@ -211,7 +211,7 @@ async def test_seed_graph_neo4j_partial_failure_rolls_back_then_retries_clean(
 
         # Act — retry with a clean script (simulates upstream fix + redeploy)
         with patch(
-            "src.python_mcp_server.seed.urllib.request.urlopen",
+            "src.ems_analyst_mcp.seed.urllib.request.urlopen",
             return_value=_gzipped_response(CYPHER_SCRIPT),
         ):
             await seed_graph_neo4j(seed_url)
@@ -267,7 +267,7 @@ async def test_seed_vector_loads_then_skips_on_rerun(
             await conn.close()
 
     # Act — first call triggers psql + writes marker
-    with patch("src.python_mcp_server.seed._psql_apply", side_effect=fake_apply):
+    with patch("src.ems_analyst_mcp.seed._psql_apply", side_effect=fake_apply):
         await seed_vector(seed_url)
 
     assert apply_calls == [(seed_url, _vector_url(postgres_pgvector))]
@@ -284,7 +284,7 @@ async def test_seed_vector_loads_then_skips_on_rerun(
 
     # Act — second call should NOT invoke psql (marker present)
     with patch(
-        "src.python_mcp_server.seed._psql_apply",
+        "src.ems_analyst_mcp.seed._psql_apply",
         side_effect=AssertionError("_psql_apply must not be called on idempotent skip"),
     ):
         await seed_vector(seed_url)

@@ -59,7 +59,7 @@ class TestFromConfigFactory:
         with (
             patch.dict("os.environ", env, clear=True),
             patch(
-                "python_mcp_server.clients.graphiti_client.Graphiti"
+                "ems_analyst_mcp.clients.graphiti_client.Graphiti"
             ) as mock_graphiti_class,
         ):
             # Act
@@ -84,7 +84,7 @@ class TestFromConfigFactory:
         with (
             patch.dict("os.environ", env, clear=True),
             patch(
-                "python_mcp_server.clients.graphiti_client.Graphiti"
+                "ems_analyst_mcp.clients.graphiti_client.Graphiti"
             ) as mock_graphiti_class,
         ):
             # Act
@@ -105,7 +105,7 @@ class TestFromConfigFactory:
         with (
             patch.dict("os.environ", env, clear=True),
             patch(
-                "python_mcp_server.clients.graphiti_client.Graphiti"
+                "ems_analyst_mcp.clients.graphiti_client.Graphiti"
             ) as mock_graphiti_class,
         ):
             # Act
@@ -134,12 +134,12 @@ class TestFromConfigFactory:
         with (
             patch.dict("os.environ", {}, clear=True),
             patch(
-                "python_mcp_server.clients.graphiti_client.Graphiti"
+                "ems_analyst_mcp.clients.graphiti_client.Graphiti"
             ) as mock_graphiti_class,
             patch(
-                "python_mcp_server.clients.graphiti_client.NeptuneDriver"
+                "ems_analyst_mcp.clients.graphiti_client.NeptuneDriver"
             ) as mock_driver_class,
-            patch("python_mcp_server.clients.graphiti_bedrock.boto3.client"),
+            patch("ems_analyst_mcp.clients.graphiti_bedrock.boto3.client"),
         ):
             mock_driver_class.return_value = MagicMock()
 
@@ -179,11 +179,11 @@ class TestFromConfigFactory:
         )
         with (
             patch.dict("os.environ", {}, clear=True),
-            patch("python_mcp_server.clients.graphiti_client.Graphiti"),
+            patch("ems_analyst_mcp.clients.graphiti_client.Graphiti"),
             patch(
-                "python_mcp_server.clients.graphiti_client.NeptuneDriver"
+                "ems_analyst_mcp.clients.graphiti_client.NeptuneDriver"
             ) as mock_driver_class,
-            patch("python_mcp_server.clients.graphiti_bedrock.boto3.client"),
+            patch("ems_analyst_mcp.clients.graphiti_bedrock.boto3.client"),
         ):
             # Act
             GraphitiClient.from_config(cfg)

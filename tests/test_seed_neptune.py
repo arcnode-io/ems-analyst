@@ -11,8 +11,8 @@ from unittest.mock import AsyncMock
 import pook
 import pytest
 
-from src.python_mcp_server.config import NeptuneGraph
-from src.python_mcp_server.seed import seed_graph_neptune
+from src.ems_analyst_mcp.config import NeptuneGraph
+from src.ems_analyst_mcp.seed import seed_graph_neptune
 
 NEPTUNE_HOST = "neptune.example.invalid"
 AOSS_HOST = "aoss.example.invalid"
@@ -45,7 +45,7 @@ def _stub_aoss(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
     a dedicated unit test (would otherwise require mocking graphiti's
     full NeptuneDriver init + OpenSearch client + 4 index-create POSTs)."""
     stub = AsyncMock(return_value=None)
-    monkeypatch.setattr("src.python_mcp_server.seed._populate_aoss_indexes", stub)
+    monkeypatch.setattr("src.ems_analyst_mcp.seed._populate_aoss_indexes", stub)
     return stub
 
 
