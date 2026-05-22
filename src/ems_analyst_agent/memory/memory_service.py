@@ -1,6 +1,6 @@
 """Memory service for storing and retrieving conversations with semantic search.
 
-Embedding provider mirrors python-mcp-server's Embedder abstraction
+Embedding provider mirrors ems-analyst-mcp's Embedder abstraction
 (Bedrock Titan for cloud, Ollama Qwen3 for airgapped) so cloud and
 airgapped deployments need ZERO third-party API keys per ADR-024.
 OpenAI is gone — see [[portal-self-serve]].
@@ -8,7 +8,7 @@ OpenAI is gone — see [[portal-self-serve]].
 
 import asyncpg
 from pgvector.asyncpg import register_vector
-from python_mcp_server.clients import EMBEDDING_DIM, Embedder
+from ems_analyst_mcp.clients import EMBEDDING_DIM, Embedder
 
 
 class MemoryService:

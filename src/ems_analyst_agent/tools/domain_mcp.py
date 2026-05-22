@@ -10,7 +10,7 @@ MCP_SERVER_TIMEOUT: Final[int] = 30
 
 
 def create_mcp_server() -> MCPToolset:
-    """Spawn the python-mcp-server child as an MCP toolset.
+    """Spawn the ems-analyst-mcp child as an MCP toolset.
 
     The child reads its backend selection from env vars at startup:
       - GRAPH_URL → Neo4j selfhosted / Aura (commercial)
@@ -25,7 +25,7 @@ def create_mcp_server() -> MCPToolset:
     return MCPToolset(
         StdioTransport(
             command="python",
-            args=["-m", "python_mcp_server"],
+            args=["-m", "ems_analyst_mcp"],
             env=os.environ.copy(),
         ),
         init_timeout=MCP_SERVER_TIMEOUT,

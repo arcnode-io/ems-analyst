@@ -13,7 +13,7 @@ from collections.abc import AsyncGenerator
 
 from pydantic_ai import Agent as PydanticAgent, RunContext, Tool
 from pydantic_ai.messages import ModelMessage
-from python_mcp_server.clients import make_embedder
+from ems_analyst_mcp.clients import make_embedder
 
 from .config import chat_model, load_config
 from .device_api import DeviceApiClient

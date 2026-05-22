@@ -13,7 +13,7 @@ from pydantic_ai.models import Model
 from pydantic_ai.models.bedrock import BedrockConverseModel
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
-from python_mcp_server.config import (
+from ems_analyst_mcp.config import (
     BedrockSettings,
     OllamaSettings,
     ProviderSettings,

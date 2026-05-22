@@ -162,7 +162,7 @@ def test_containers() -> Generator[tuple[str, str]]:
 
         asyncio.run(setup_pgvector())
 
-        # python-mcp-server's GraphitiClient.from_config() expects creds embedded
+        # ems-analyst-mcp's GraphitiClient.from_config() expects creds embedded
         # in GRAPH_URL (Aura-style packaging). Pack them in here so the child
         # MCP process inherits a working backend handle.
         parsed = urlparse(neo4j.url)
