@@ -1,7 +1,7 @@
 # Python MCP Server 🧠
 
-![](https://img.shields.io/gitlab/pipeline-status/engineering-with-ai/python-mcp-server?branch=main&logo=gitlab)
-![](https://gitlab.com/engineering-with-ai/python-mcp-server/badges/main/coverage.svg)
+![](https://img.shields.io/gitlab/pipeline-status/arcnode-io/ems-analyst-mcp?branch=main&logo=gitlab)
+![](https://gitlab.com/arcnode-io/ems-analyst-mcp/badges/main/coverage.svg)
 ![](https://img.shields.io/badge/3.13.2-gray?logo=python)
 ![](https://img.shields.io/badge/ty_checked-gray?logo=astral)
 ![](https://img.shields.io/badge/0.10.9-gray?logo=uv)
@@ -171,7 +171,7 @@ IDs) come through the BM25 leg that pure cosine would miss.
 ## Development
 
 ```bash
-git clone <repo> && cd python-mcp-server
+git clone <repo> && cd ems-analyst-mcp
 uv sync --dev
 cp template-secrets.env .env  # fill in secrets
 
