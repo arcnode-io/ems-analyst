@@ -1,0 +1,313 @@
+"""Integration tests for MCP server with Graphiti and RAG."""
+
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
+
+import pytest
+
+from src.ems_analyst_mcp.clients.embedder import Embedder
+from src.ems_analyst_mcp.clients.graphiti_client import GraphitiClient
+from src.ems_analyst_mcp.clients.rag_client import RAGClient
+from src.ems_analyst_mcp.config import (
+    Config,
+    LogLevel,
+    Neo4jGraph,
+    OllamaSettings,
+)
+from src.ems_analyst_mcp.server import create_server
+
+
+def _test_config() -> Config:
+    """Config with Ollama settings + neo4j backend (GRAPH_URL env carries creds)."""
+    return Config(
+        log_level=LogLevel.INFO,
+        settings=OllamaSettings(
+            llm_provider="ollama",
+            ollama_base_url="http://localhost:11434/v1",
+            ollama_chat_model="qwen3.6:35b",
+            ollama_embedding_model="qwen3-embedding:4b",
+        ),
+        graph=Neo4jGraph(backend="neo4j"),
+    )
+
+
+class TestGraphitiClient:
+    """Test Graphiti client functionality."""
+
+    @pytest.mark.asyncio
+    async def test_graphiti_client_search_returns_results(self) -> None:
+        """Test that Graphiti client can perform search."""
+        # Arrange
+        mock_graphiti = AsyncMock()
+        mock_result = SimpleNamespace(
+            uuid="test",
+            id="test",
+            fact="test result",
+            content="test result",
+            score=0.9,
+        )
+        mock_graphiti.search.return_value = [mock_result]
+
+        client = GraphitiClient(mock_graphiti)
+
+        # Act
+        results = await client.search("test query")
+
+        # Assert
+        assert len(results) == 1
+        assert results[0].id == "test"
+        assert results[0].content == "test result"
+        mock_graphiti.search.assert_called_once_with(
+            query="test query", center_node_uuid=None
+        )
+
+
+class TestRAGClient:
+    """Test RAG client functionality."""
+
+    @pytest.mark.asyncio
+    async def test_rag_client_vector_search_returns_results(self) -> None:
+        """Test that RAG client can perform vector search."""
+        # Arrange
+        with patch(
+            "src.ems_analyst_mcp.clients.rag_client.asyncpg.connect"
+        ) as mock_connect:
+            mock_conn = AsyncMock()
+            mock_connect.return_value = mock_conn
+            mock_conn.fetch.return_value = [
+                {
+                    "id": "doc1",
+                    "content": "test document",
+                    "metadata": {},
+                    "distance": 0.1,
+                }
+            ]
+
+            embedder = AsyncMock(spec=Embedder)
+            client = RAGClient(
+                db_url="postgresql://test:test@localhost:5432/test",
+                embedder=embedder,
+                table_name="energy_embeddings",
+            )
+            query_embedding = [0.1, 0.2, 0.3]
+
+            # Act
+            results = await client.vector_search(query_embedding)
+
+            # Assert
+            assert len(results) == 1
+            assert results[0].id == "doc1"
+            assert results[0].content == "test document"
+            mock_conn.fetch.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_rag_client_queries_energy_embeddings_table(self) -> None:
+        """Test that RAG client queries energy_embeddings table with proper schema."""
+        # Arrange
+        with patch(
+            "src.ems_analyst_mcp.clients.rag_client.asyncpg.connect"
+        ) as mock_connect:
+            mock_conn = AsyncMock()
+            mock_connect.return_value = mock_conn
+            mock_conn.fetch.return_value = [
+                {
+                    "id": 1,
+                    "title": "Power Systems Basics - Grid Fundamentals",
+                    "content": "The electric grid operates at multiple voltage levels",
+                    "book": "Power Systems Basics",
+                    "section_level": "h2",
+                    "analysis_relevance": "high",
+                    "distance": 0.05,
+                }
+            ]
+
+            embedder = AsyncMock(spec=Embedder)
+            client = RAGClient(
+                db_url="postgresql://test:test@localhost:5432/test",
+                embedder=embedder,
+                table_name="energy_embeddings",
+            )
+            query_embedding = [0.1] * 1536
+
+            # Act
+            results = await client.vector_search(query_embedding, limit=5)
+
+            # Assert
+            assert len(results) == 1
+            assert (
+                results[0].content
+                == "The electric grid operates at multiple voltage levels"
+            )
+            assert results[0].similarity_score == 0.05
+
+            # Verify the query uses energy_embeddings table
+            call_args = mock_conn.fetch.call_args
+            query_sql = call_args[0][0]
+            assert "energy_embeddings" in query_sql
+
+
+class TestMCPServer:
+    """Test MCP server functionality."""
+
+    def test_create_server_returns_fastmcp_instance(self) -> None:
+        """Test that create_server returns a FastMCP instance."""
+        # Act
+        server = create_server()
+
+        # Assert
+        assert server is not None
+        assert str(type(server)) == "<class 'mcp.server.fastmcp.server.FastMCP'>"
+        # Check what methods are available
+        print(
+            "FastMCP methods:",
+            [method for method in dir(server) if not method.startswith("_")],
+        )
+
+    @pytest.mark.asyncio
+    async def test_search_knowledge_tool_exists(self) -> None:
+        """Test that search_knowledge tool is registered with server."""
+        # Arrange
+        server = create_server()
+
+        # Act
+        tools = await server.list_tools()
+
+        # Assert
+        tool_names = [tool.name for tool in tools]
+        assert "search_knowledge" in tool_names
+
+        # Check the tool has the expected description
+        search_tool = next(tool for tool in tools if tool.name == "search_knowledge")
+        description = search_tool.description or ""
+        assert "USE WHEN" in description
+        assert "verified facts" in description
+
+    @pytest.mark.asyncio
+    async def test_search_knowledge_tool_execution(self) -> None:
+        """Test that search_knowledge tool can be called and returns correct format."""
+        # Arrange — explicit cfg so the tool resolves graph.backend=neo4j
+        with (
+            patch.dict(
+                "os.environ", {"GRAPH_URL": "neo4j+s://u:p@host:7687"}, clear=False
+            ),
+            patch(
+                "src.ems_analyst_mcp.clients.graphiti_client.Graphiti"
+            ) as mock_graphiti_class,
+        ):
+            mock_graphiti = AsyncMock()
+            mock_graphiti_class.return_value = mock_graphiti
+            mock_result = SimpleNamespace(
+                uuid="test_id",
+                id="test_id",
+                fact="test content",
+                content="test content",
+                score=0.9,
+            )
+
+            mock_graphiti.search.return_value = [mock_result]
+
+            server = create_server(config=_test_config())
+
+            # Act
+            _content, result_data = await server.call_tool(
+                "search_knowledge", {"query": "test query", "limit": 5}
+            )
+
+            # Assert - FastMCP returns tuple of (content, result_dict)
+            # Runtime behavior returns dict despite type annotations
+            assert result_data is not None
+            assert isinstance(result_data, dict)  # type: ignore[unreachable]
+            assert "items" in result_data  # type: ignore[unreachable]
+            assert "total" in result_data
+            assert "source" in result_data
+            assert result_data["source"] == "knowledge_graph"
+            assert len(result_data["items"]) == 1
+            # Access nested dict structure for MCP result data
+            first_item = result_data["items"][0]
+            assert first_item["id"] == "test_id"
+            assert first_item["content"] == "test content"
+
+    @pytest.mark.asyncio
+    async def test_knowledge_instructions_resource_exists(self) -> None:
+        """Test that knowledge instructions resource is available."""
+        # Arrange
+        server = create_server()
+
+        # Act
+        resources = await server.list_resources()
+
+        # Assert
+        resource_uris = [str(resource.uri) for resource in resources]
+        assert "knowledge://instructions" in resource_uris
+
+        # Test reading the resource
+        content_iterable = await server.read_resource("knowledge://instructions")
+        # Handle the resource content properly - it's an Iterable[ReadResourceContents]
+        content_text = ""
+        content_items = list(content_iterable)
+        if content_items:
+            first_content = content_items[0]
+            if hasattr(first_content, "text"):
+                content_text = first_content.text
+            elif hasattr(first_content, "content"):
+                content = first_content.content
+                content_text = (
+                    content if isinstance(content, str) else content.decode("utf-8")
+                )
+            else:
+                content_text = str(first_content)
+
+        assert isinstance(content_text, str)
+        assert "ALWAYS verify facts" in content_text
+        assert "Cite your sources" in content_text
+
+    def test_create_server_with_explicit_config(self) -> None:
+        """Test that create_server accepts explicit config parameters."""
+        # Arrange
+        test_config = _test_config()
+
+        # Act
+        server = create_server(config=test_config)
+
+        # Assert
+        assert server is not None
+        assert str(type(server)) == "<class 'mcp.server.fastmcp.server.FastMCP'>"
+
+    @pytest.mark.asyncio
+    async def test_create_server_with_explicit_config_can_call_tools(self) -> None:
+        """Test that server created with explicit config can execute tools."""
+        # Arrange
+        test_config = _test_config()
+
+        with (
+            patch.dict(
+                "os.environ", {"GRAPH_URL": "neo4j+s://u:p@host:7687"}, clear=False
+            ),
+            patch(
+                "src.ems_analyst_mcp.clients.graphiti_client.Graphiti"
+            ) as mock_graphiti_class,
+        ):
+            mock_graphiti = AsyncMock()
+            mock_graphiti_class.return_value = mock_graphiti
+            mock_result = SimpleNamespace(
+                uuid="test_id",
+                id="test_id",
+                fact="test content",
+                content="test content",
+                score=0.9,
+            )
+
+            mock_graphiti.search.return_value = [mock_result]
+
+            # Act
+            server = create_server(config=test_config)
+            _content, result_data = await server.call_tool(
+                "search_knowledge", {"query": "test query", "limit": 5}
+            )
+
+            # Assert
+            # Runtime behavior returns dict despite type annotations
+            assert result_data is not None
+            assert isinstance(result_data, dict)  # type: ignore[unreachable]
+            assert "items" in result_data  # type: ignore[unreachable]
+            assert len(result_data["items"]) == 1

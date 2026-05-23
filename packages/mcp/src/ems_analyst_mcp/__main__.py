@@ -1,0 +1,60 @@
+"""MCP server CLI entry point.
+
+Two commands:
+
+  python -m ems_analyst_mcp         # start MCP stdio server (no seed)
+  python -m ems_analyst_mcp seed    # one-shot: run seed_all and exit
+
+Seed is a SEPARATE process from the MCP child for a reason — pydantic-ai
+spawns/kills the MCP child per request, so a background seed inside the
+MCP child gets cancelled mid-bulk-load and the marker never writes
+(infinite re-seed loop). Caller (docker compose / analyst-server image
+entrypoint) runs `seed` first, THEN starts the long-lived analyst-server
+process; once the marker is written, every subsequent MCP-child spawn
+sees marker=True and skips seed cleanly.
+"""
+
+import asyncio
+import sys
+
+from .config import load_config, setup_logger
+from .seed import e2e_graph_seed_url, seed_all
+from .server import create_server
+
+
+async def _serve() -> None:
+    """Long-lived MCP stdio loop. No seed — caller should run `seed` first."""
+    config = load_config()
+    setup_logger(config)
+    server = create_server(config)
+    await server.run_stdio_async()
+
+
+async def _seed() -> None:
+    """One-shot seed — runs to completion, writes markers, exits.
+
+    cfg.e2e=true → seed graph from the small `-e2e` fixture (fast,
+    deterministic CI); false → the full production artifact.
+    """
+    config = load_config()
+    setup_logger(config)
+    await seed_all(
+        vector_url=config.settings.vector_seed_url,
+        graph_neo4j_url=e2e_graph_seed_url(
+            config.settings.graph_neo4j_seed_url, config.e2e
+        ),
+        graph=config.graph,
+        e2e=config.e2e,
+    )
+
+
+def main() -> None:
+    """Entry point for uvx/CLI execution."""
+    if len(sys.argv) > 1 and sys.argv[1] == "seed":
+        asyncio.run(_seed())
+    else:
+        asyncio.run(_serve())
+
+
+if __name__ == "__main__":
+    main()
