@@ -32,7 +32,7 @@ deploy:
   only: [main]
   needs: [checks]
   script:
-    - cd /home/admin/arcnode/ems-analyst && git pull --ff-only && cd /home/admin/docker/ems-analyst-server && sudo docker compose up -d --build
+    - cd /home/admin/arcnode/ems-analyst && git pull --ff-only && cd /home/admin/docker/ems-analyst-server && docker compose up -d --build
 
 mirror:
   stage: mirror
