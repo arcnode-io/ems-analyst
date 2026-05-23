@@ -55,12 +55,7 @@ eval-mcp = "python -m ems_analyst_agent.eval_mcp"
 review = "claude 'run code-reviewer agent against diff for quality and elegance'"
 commit = "bash -c 'uv run poe checks && uv run poe test && uv run poe review && git add -A && git cz && git push'"
 
-[tool.poe.tasks.audit-packages]
-# PIPAPI_PYTHON_LOCATION pins pip-audit to THIS project's venv. Without
-# it pip-audit follows an ambient VIRTUAL_ENV and audits whatever
-# interpreter is loaded — silently auditing the wrong project.
-cmd = "pip-audit --ignore-vuln GHSA-4xh5-x5gv-qwph --ignore-vuln CVE-2026-3219 --ignore-vuln CVE-2026-45409 --ignore-vuln PYSEC-2025-183"
-env = { PIPAPI_PYTHON_LOCATION = "${POE_ROOT}/.venv/bin/python" }
+audit-packages = "pip-audit --ignore-vuln GHSA-4xh5-x5gv-qwph --ignore-vuln CVE-2026-3219 --ignore-vuln CVE-2026-45409 --ignore-vuln PYSEC-2025-183"
 
 [tool.deptry]
 known_first_party = ["ems_analyst_agent"]
