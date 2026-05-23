@@ -92,6 +92,3 @@ ems_analyst_agent = [
     "demo_data/*.json",
 ]
 
-[tool.uv.sources]
-ems-analyst-mcp = { git = "https://gitlab.com/arcnode-io/ems-analyst-mcp.git" }
-

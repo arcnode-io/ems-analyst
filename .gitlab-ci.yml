@@ -1,0 +1,38 @@
+stages:
+  - check
+  - mirror
+
+checks:
+  stage: check
+  variables:
+    UV_FROZEN: "true"
+  script:
+    - uv sync --all-packages --dev
+    - |
+      set -e
+      for d in mcp agent server; do
+        echo "===== $d ====="
+        (cd packages/$d && uv run poe checks)
+        (cd packages/$d && uv run pytest --junitxml=../../junit-$d.xml)
+        (cd packages/$d && uv run poe cover)
+        (cd packages/$d && uv run coverage xml -o ../../coverage-$d.xml)
+      done
+  coverage: '/(?i)total.*? (100(?:\.0+)?\%|[1-9]?\d(?:\.\d+)?\%)$/'
+  artifacts:
+    when: always
+    reports:
+      junit: junit-*.xml
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage-server.xml
+
+mirror:
+  stage: mirror
+  variables:
+    GIT_STRATEGY: clone
+    GIT_DEPTH: 0
+  script:
+    - git checkout -B main
+    - git push --mirror git@github.com:arcnode-io/ems-analyst.git
+  only:
+    - main

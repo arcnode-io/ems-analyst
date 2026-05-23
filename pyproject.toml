@@ -1,0 +1,7 @@
+[tool.uv.workspace]
+members = ["packages/mcp", "packages/agent", "packages/server"]
+
+[tool.uv.sources]
+ems-analyst-mcp = { workspace = true }
+ems-analyst-agent = { workspace = true }
+ems-analyst-server = { workspace = true }

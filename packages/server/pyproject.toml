@@ -16,9 +16,6 @@ dependencies = [
     "uvicorn>=0.34.0",
 ]
 
-[tool.uv.sources]
-ems-analyst-agent = { git = "https://gitlab.com/arcnode-io/ems-analyst-agent.git" }
-
 [dependency-groups]
 dev = [
     "asyncpg-stubs>=0.31.2",
