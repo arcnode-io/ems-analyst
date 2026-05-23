@@ -2,7 +2,7 @@
 name = "ems-analyst-mcp"
 version = "1.0.0-beta"
 description = "MCP server with Graphiti knowledge graph and RAG search for accurate AI responses"
-requires-python = "==3.13.2"
+requires-python = ">=3.13.2"
 dependencies = [
     "pydantic>=2.9.2",
     "mcp[cli]>=1.0.0",
