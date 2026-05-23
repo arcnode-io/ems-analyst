@@ -1,0 +1,39 @@
+local:
+  log_level: DEBUG
+  e2e: false
+  site_id: site_001
+  settings:
+    llm_provider: ollama
+    ollama_base_url: http://173.211.12.43:11434/v1
+    ollama_chat_model: gemma4:26b
+    ollama_embedding_model: qwen3-embedding:4b
+  market:
+    wholesale_market: ercot
+    settlement_point: HB_NORTH
+
+demo:
+  log_level: INFO
+  e2e: false
+  site_id: demo-site
+  settings:
+    llm_provider: ollama
+    ollama_base_url: http://173.211.12.43:11434/v1
+    ollama_chat_model: gemma4:26b
+    ollama_embedding_model: qwen3-embedding:4b
+  market:
+    wholesale_market: ercot
+    settlement_point: HB_NORTH
+
+beta:
+  log_level: INFO
+  e2e: false
+  # beta deploys always get a cfg.customer.yml from platform-api UserData
+  # — these are fallback values only; the overlay should always be present.
+  site_id: arcnode_beta
+  settings:
+    llm_provider: bedrock
+    bedrock_chat_model_id: us.anthropic.claude-sonnet-4-6
+    bedrock_embedding_model_id: amazon.titan-embed-text-v2:0
+  market:
+    wholesale_market: ercot
+    settlement_point: HB_NORTH
