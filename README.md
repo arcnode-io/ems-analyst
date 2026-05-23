@@ -1,5 +1,7 @@
 # ems-analyst 📊🤖
 
+![](https://img.shields.io/gitlab/pipeline-status/arcnode-io/ems-analyst?branch=main&logo=gitlab)
+![](https://gitlab.com/arcnode-io/ems-analyst/badges/main/coverage.svg)
 ![](https://img.shields.io/badge/3.13-gray?logo=python)
 ![](https://img.shields.io/badge/uv-gray?logo=uv)
 

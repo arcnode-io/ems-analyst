@@ -16,8 +16,16 @@ checks:
         (cd packages/$d && uv run poe checks)
         (cd packages/$d && uv run pytest --junitxml=../../junit-$d.xml)
         (cd packages/$d && uv run poe cover)
-        (cd packages/$d && uv run coverage xml -o ../../coverage-$d.xml)
+        cp packages/$d/.coverage .coverage.$d
       done
+    # Roll the 3 packages' coverage data files into ONE total + ONE
+    # cobertura XML so the project badge + MR-diff visualization see
+    # the monorepo, not just the last package iterated.
+    - |
+      echo "===== combined ====="
+      uv run coverage combine .coverage.*
+      uv run coverage report
+      uv run coverage xml -o coverage.xml
   coverage: '/(?i)total.*? (100(?:\.0+)?\%|[1-9]?\d(?:\.\d+)?\%)$/'
   artifacts:
     when: always
@@ -25,7 +33,7 @@ checks:
       junit: junit-*.xml
       coverage_report:
         coverage_format: cobertura
-        path: coverage-server.xml
+        path: coverage.xml
 
 deploy:
   stage: deploy
