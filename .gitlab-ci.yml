@@ -1,5 +1,6 @@
 stages:
   - check
+  - deploy
   - mirror
 
 checks:
@@ -25,6 +26,13 @@ checks:
       coverage_report:
         coverage_format: cobertura
         path: coverage-server.xml
+
+deploy:
+  stage: deploy
+  only: [main]
+  needs: [checks]
+  script:
+    - cd /home/admin/arcnode/ems-analyst && git pull --ff-only && cd /home/admin/docker/ems-analyst-server && sudo docker compose up -d --build
 
 mirror:
   stage: mirror
