@@ -1,0 +1,37 @@
+stages:
+  - check
+  - publish 
+  - mirror
+
+checks:
+  stage: check
+  script:
+    - uv run poe checks
+    - uv run pytest --junitxml=junit.xml
+    - uv run poe cover
+    - uv run coverage xml
+  coverage: '/(?i)total.*? (100(?:\.0+)?\%|[1-9]?\d(?:\.\d+)?\%)$/'
+  artifacts:
+    when: always
+    reports:
+      junit: junit.xml
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+build:
+  stage: publish
+  script:
+    - aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws
+    - docker build -t public.ecr.aws/y1d2j6a8/ems-analyst-server .
+    - docker push public.ecr.aws/y1d2j6a8/ems-analyst-server
+
+mirror:
+  stage: mirror
+  variables:
+    GIT_STRATEGY: clone
+    GIT_DEPTH: 0
+  script:
+    - git checkout -B main
+    - git push --mirror git@github.com:arcnode-io/ems-analyst-server.git
+  only:
+    - main

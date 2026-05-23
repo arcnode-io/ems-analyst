@@ -1,0 +1,18 @@
+[environment]
+python-version = "3.13"
+root = ["./"]
+
+[rules]
+all = "error"
+unresolved-import = "ignore"
+
+[src]
+include = ["src", "tests"]
+
+[terminal]
+output-format = "concise"
+
+[analysis]
+replace-imports-with-any = [
+    "pook.**",
+]
