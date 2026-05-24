@@ -268,6 +268,32 @@ async def _graph_write_marker(driver: AsyncDriver) -> None:
         )
 
 
+async def _should_seed_graph(driver: AsyncDriver, e2e: bool) -> bool:
+    """Decide whether to actually run the graph seed.
+
+    e2e=True always seeds (test fixture is small; re-seed expected).
+    Production:
+      - marker present → already seeded, skip
+      - real data present without marker → accept it, write marker, skip
+        (never wipe live data)
+      - otherwise → seed
+    """
+    if e2e:
+        return True
+    if await _graph_marker_present(driver):
+        logger.info("graph slice already seeded; skipping")
+        return False
+    existing = await _graph_non_marker_node_count(driver)
+    if existing:
+        logger.info(
+            "graph has %d nodes but marker absent; marking + skipping (no wipe)",
+            existing,
+        )
+        await _graph_write_marker(driver)
+        return False
+    return True
+
+
 async def seed_graph_neo4j(seed_url: str, e2e: bool = False) -> None:
     """Restore cypher dump into GRAPH_URL Neo4j.
 
@@ -293,22 +319,8 @@ async def seed_graph_neo4j(seed_url: str, e2e: bool = False) -> None:
         raise RuntimeError("GRAPH_URL must include user:password (Aura format)")
     driver = AsyncGraphDatabase.driver(uri, auth=(user, password))
     try:
-        if not e2e and await _graph_marker_present(driver):
-            logger.info("graph slice already seeded; skipping")
+        if not await _should_seed_graph(driver, e2e):
             return
-        # Defense: marker absent but the graph already has real nodes.
-        # Accept + write the marker. _wipe_graph is destructive — seed
-        # must never wipe live data.
-        if not e2e:
-            existing = await _graph_non_marker_node_count(driver)
-            if existing:
-                logger.info(
-                    "graph has %d nodes but marker absent; marking + "
-                    "skipping (no wipe)",
-                    existing,
-                )
-                await _graph_write_marker(driver)
-                return
         logger.info("seeding graph slice from %s", seed_url)
         cypher_script = _fetch_gunzip(seed_url)
         statements = [s.strip() for s in cypher_script.split(";\n") if s.strip()]
