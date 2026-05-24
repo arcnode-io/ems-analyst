@@ -45,6 +45,7 @@ from neo4j import (
 )
 
 from .clients.graphiti_client import _split_neo4j_url
+from .clients.rag_client import KNOWLEDGE_TABLE
 from .config import Neo4jGraph, NeptuneGraph, NoneGraph
 
 logger = logging.getLogger(__name__)
@@ -147,14 +148,15 @@ async def seed_vector(seed_url: str) -> None:
         if marker:
             logger.info("vector slice already seeded; skipping")
             return
-        # Defense: marker absent but `energy_embeddings` already has
+        # Defense: marker absent but the embeddings table already has
         # rows (prior manual seed, recovered backup, …). Accept the
         # data + write the marker. Seed must never overwrite live data.
+        # KNOWLEDGE_TABLE is a Final constant — safe to f-string.
         table_exists = await conn.fetchval(
-            "SELECT to_regclass('energy_embeddings') IS NOT NULL"
+            f"SELECT to_regclass('{KNOWLEDGE_TABLE}') IS NOT NULL"
         )
         existing = (
-            await conn.fetchval("SELECT count(*) FROM energy_embeddings")
+            await conn.fetchval(f"SELECT count(*) FROM {KNOWLEDGE_TABLE}")  # noqa: S608
             if table_exists
             else 0
         )
