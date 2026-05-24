@@ -77,7 +77,16 @@ class _ZuluFormatter(logging.Formatter):
 
         """
         zulu_time = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
-        return f"{zulu_time}  {record.levelname}: {record.getMessage()}"
+        msg = f"{zulu_time}  {record.levelname}: {record.getMessage()}"
+        # Append exc_info / stack_info — without this, log.exception() drops
+        # the traceback silently and we get a one-line "X failed" with no
+        # cause. The default Formatter.format does this for you; we have to
+        # do it ourselves because we don't chain to super().
+        if record.exc_info:
+            msg += "\n" + self.formatException(record.exc_info)
+        if record.stack_info:
+            msg += "\n" + self.formatStack(record.stack_info)
+        return msg
 
 
 def setup_logger(config: Config) -> None:
