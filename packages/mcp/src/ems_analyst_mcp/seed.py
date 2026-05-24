@@ -147,6 +147,29 @@ async def seed_vector(seed_url: str) -> None:
         if marker:
             logger.info("vector slice already seeded; skipping")
             return
+        # Defense: marker absent but `energy_embeddings` already has
+        # rows (prior manual seed, recovered backup, …). Accept the
+        # data + write the marker. Seed must never overwrite live data.
+        table_exists = await conn.fetchval(
+            "SELECT to_regclass('energy_embeddings') IS NOT NULL"
+        )
+        existing = (
+            await conn.fetchval("SELECT count(*) FROM energy_embeddings")
+            if table_exists
+            else 0
+        )
+        if existing:
+            logger.info(
+                "vector slice has %d existing rows but marker absent; "
+                "marking + skipping (no overwrite)",
+                existing,
+            )
+            await conn.execute(
+                "INSERT INTO arcnode_seed_markers (slice) VALUES ($1) "
+                "ON CONFLICT DO NOTHING",
+                VECTOR_MARKER_SLICE,
+            )
+            return
         logger.info("seeding vector slice from %s", seed_url)
         await _psql_apply(seed_url, conn_url)
         await conn.execute(
@@ -225,6 +248,26 @@ async def _graph_marker_present(driver: AsyncDriver) -> bool:
         return await result.single() is not None
 
 
+async def _graph_non_marker_node_count(driver: AsyncDriver) -> int:
+    """Count nodes that aren't the marker — i.e. real data."""
+    async with driver.session() as session:
+        result = await session.run(
+            "MATCH (n) WHERE NOT n:ArcnodeSeedMarker RETURN count(n) AS c"
+        )
+        rec = await result.single()
+        return int(rec["c"]) if rec else 0
+
+
+async def _graph_write_marker(driver: AsyncDriver) -> None:
+    """MERGE the seed-marker node — idempotent, sets seeded_at on create."""
+    async with driver.session() as session:
+        await session.run(
+            "MERGE (m:ArcnodeSeedMarker {slice: $slice}) "
+            "ON CREATE SET m.seeded_at = datetime()",
+            slice=GRAPH_MARKER_SLICE,
+        )
+
+
 async def seed_graph_neo4j(seed_url: str, e2e: bool = False) -> None:
     """Restore cypher dump into GRAPH_URL Neo4j.
 
@@ -253,6 +296,19 @@ async def seed_graph_neo4j(seed_url: str, e2e: bool = False) -> None:
         if not e2e and await _graph_marker_present(driver):
             logger.info("graph slice already seeded; skipping")
             return
+        # Defense: marker absent but the graph already has real nodes.
+        # Accept + write the marker. _wipe_graph is destructive — seed
+        # must never wipe live data.
+        if not e2e:
+            existing = await _graph_non_marker_node_count(driver)
+            if existing:
+                logger.info(
+                    "graph has %d nodes but marker absent; marking + "
+                    "skipping (no wipe)",
+                    existing,
+                )
+                await _graph_write_marker(driver)
+                return
         logger.info("seeding graph slice from %s", seed_url)
         cypher_script = _fetch_gunzip(seed_url)
         statements = [s.strip() for s in cypher_script.split(";\n") if s.strip()]
