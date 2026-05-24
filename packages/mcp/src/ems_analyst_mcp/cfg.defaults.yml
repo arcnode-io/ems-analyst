@@ -23,7 +23,7 @@ demo:
     ollama_base_url: http://173.211.12.43:11434/v1
     ollama_chat_model: gemma4:26b
     ollama_embedding_model: qwen3-embedding:4b
-    vector_seed_url: https://arcnode-public.s3.us-east-1.amazonaws.com/seed/vector-cloud.sql.gz
+    vector_seed_url: https://arcnode-public.s3.us-east-1.amazonaws.com/seed/vector-airgapped.sql.gz
   graph:
     backend: neo4j
 
