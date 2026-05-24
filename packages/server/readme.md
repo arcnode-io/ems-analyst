@@ -1,7 +1,7 @@
 # EMS Analyst Server 🛰️
 
-![](https://img.shields.io/gitlab/pipeline-status/arcnode-io/ems-analyst-server?branch=main&logo=gitlab)
-![](https://gitlab.com/arcnode-io/ems-analyst-server/badges/main/coverage.svg)
+![](https://img.shields.io/gitlab/pipeline-status/arcnode-io/ems-analyst?branch=main&label=checks-server&logo=gitlab)
+![](https://gitlab.com/arcnode-io/ems-analyst/badges/main/coverage.svg?job=checks-server)
 ![](https://img.shields.io/badge/ty_checked-gray?logo=astral)
 ![](https://img.shields.io/badge/fastapi-gray?logo=fastapi)
 ![](https://img.shields.io/badge/pydantic-gray?logo=pydantic)

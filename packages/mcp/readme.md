@@ -1,7 +1,7 @@
 # EMS Analyst MCP 🧠
 
-![](https://img.shields.io/gitlab/pipeline-status/arcnode-io/ems-analyst-mcp?branch=main&logo=gitlab)
-![](https://gitlab.com/arcnode-io/ems-analyst-mcp/badges/main/coverage.svg)
+![](https://img.shields.io/gitlab/pipeline-status/arcnode-io/ems-analyst?branch=main&label=checks-mcp&logo=gitlab)
+![](https://gitlab.com/arcnode-io/ems-analyst/badges/main/coverage.svg?job=checks-mcp)
 ![](https://img.shields.io/badge/3.13.2-gray?logo=python)
 ![](https://img.shields.io/badge/ty_checked-gray?logo=astral)
 ![](https://img.shields.io/badge/0.10.9-gray?logo=uv)

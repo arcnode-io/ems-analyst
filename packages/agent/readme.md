@@ -1,7 +1,7 @@
 # EMS Analyst Agent 🤖💬
 
-![](https://img.shields.io/gitlab/pipeline-status/arcnode-io/ems-analyst-agent?branch=main&logo=gitlab)
-![](https://gitlab.com/arcnode-io/ems-analyst-agent/badges/main/coverage.svg)
+![](https://img.shields.io/gitlab/pipeline-status/arcnode-io/ems-analyst?branch=main&label=checks-agent&logo=gitlab)
+![](https://gitlab.com/arcnode-io/ems-analyst/badges/main/coverage.svg?job=checks-agent)
 ![](https://img.shields.io/badge/ty_checked-gray?logo=astral)
 ![](https://img.shields.io/badge/llama3-gray?logo=meta)
 ![](https://img.shields.io/badge/pydantic--ai-gray?logo=pydantic)

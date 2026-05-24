@@ -1,36 +1,66 @@
 stages:
   - check
+  - aggregate
   - deploy
   - mirror
 
-checks:
+# Per-package job template. Each concrete job sets PKG=mcp|agent|server;
+# checks + tests + coverage run scoped to that package's pyproject. The
+# .coverage data file is artifacted so aggregate-coverage can merge.
+.checks-template:
   stage: check
   variables:
     UV_FROZEN: "true"
-  script:
+  before_script:
     - uv sync --all-packages --dev
-    - |
-      set -e
-      for d in mcp agent server; do
-        echo "===== $d ====="
-        (cd packages/$d && uv run poe checks)
-        (cd packages/$d && uv run pytest --junitxml=../../junit-$d.xml)
-        (cd packages/$d && uv run poe cover)
-        cp packages/$d/.coverage .coverage.$d
-      done
-    # Roll the 3 packages' coverage data files into ONE total + ONE
-    # cobertura XML so the project badge + MR-diff visualization see
-    # the monorepo, not just the last package iterated.
-    - |
-      echo "===== combined ====="
-      uv run coverage combine .coverage.*
-      uv run coverage report
-      uv run coverage xml -o coverage.xml
+  script:
+    - cd packages/$PKG
+    - uv run poe checks
+    - uv run pytest --junitxml=../../junit-$PKG.xml
+    - uv run poe cover
+    - cp .coverage ../../.coverage.$PKG
+  coverage: '/(?i)total.*? (100(?:\.0+)?\%|[1-9]?\d(?:\.\d+)?\%)$/'
+  artifacts:
+    when: always
+    paths:
+      - .coverage.*
+    reports:
+      junit: junit-*.xml
+
+checks-mcp:
+  extends: .checks-template
+  variables:
+    PKG: mcp
+
+checks-agent:
+  extends: .checks-template
+  variables:
+    PKG: agent
+
+checks-server:
+  extends: .checks-template
+  variables:
+    PKG: server
+
+# Pulls in the 3 .coverage data files via `needs:` artifacts, merges
+# them, and emits one TOTAL line (project-level coverage badge) + one
+# cobertura xml (MR-diff visualization for the whole monorepo).
+aggregate-coverage:
+  stage: aggregate
+  needs: [checks-mcp, checks-agent, checks-server]
+  variables:
+    UV_FROZEN: "true"
+  before_script:
+    - uv sync --all-packages --dev
+  script:
+    - ls -la .coverage.*
+    - uv run coverage combine .coverage.*
+    - uv run coverage report
+    - uv run coverage xml -o coverage.xml
   coverage: '/(?i)total.*? (100(?:\.0+)?\%|[1-9]?\d(?:\.\d+)?\%)$/'
   artifacts:
     when: always
     reports:
-      junit: junit-*.xml
       coverage_report:
         coverage_format: cobertura
         path: coverage.xml
@@ -38,7 +68,7 @@ checks:
 deploy:
   stage: deploy
   only: [main]
-  needs: [checks]
+  needs: [aggregate-coverage]
   script:
     - cd /home/admin/arcnode/ems-analyst && git pull --ff-only && cd /home/admin/docker/ems-analyst-server && docker compose up -d --build --force-recreate
 
