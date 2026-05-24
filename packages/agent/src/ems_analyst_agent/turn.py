@@ -22,6 +22,7 @@ from pydantic_ai.messages import (
 from .device_api import DeviceApiClient
 from .memory import MemoryService
 from .schemas import AnalystArtifact, AnalystMessage
+from .scope_filter import ScopeFilter
 from .server_client import ServerClient
 
 log = logging.getLogger(__name__)
@@ -87,6 +88,38 @@ class ChatTurnResult:
     status: str = "ok"
 
 
+# Module-level singleton — anchors are embedded once on first in_scope
+# call and cached for the process lifetime. Lazy-init so test code that
+# doesn't exercise the gate doesn't trigger the 20-anchor embed batch.
+_scope_filter: ScopeFilter | None = None
+
+
+def _get_scope_filter(deps: AgentDeps) -> ScopeFilter:
+    """Return the process-wide scope filter, constructing it on first use."""
+    global _scope_filter  # noqa: PLW0603  # intentional lazy module singleton
+    if _scope_filter is None:
+        _scope_filter = ScopeFilter(deps.memory_service.embedder)
+    return _scope_filter
+
+
+_OUT_OF_SCOPE_TEXT: str = (
+    "I'm scoped to grid, markets, BESS, protocols, and weather/demand "
+    "topics — that question's outside my domain."
+)
+
+
+def _out_of_scope_result() -> ChatTurnResult:
+    """Synthetic terminal result for queries the pre-gate rejected."""
+    message = AnalystMessage.model_validate(
+        {
+            "role": "assistant",
+            "content": [{"type": "text", "text": _OUT_OF_SCOPE_TEXT}],
+            "toolTrace": [],
+        }
+    )
+    return ChatTurnResult(message=message, new_messages=[], status="out_of_scope")
+
+
 async def run_turn_stream(
     agent: PydanticAgent[AgentDeps],
     deps: AgentDeps,
@@ -102,6 +135,10 @@ async def run_turn_stream(
 
     `seq` pairs a start with its end.
     """
+    if not await _get_scope_filter(deps).in_scope(prompt):
+        log.info("scope filter rejected query (no LLM call)")
+        yield "result", _out_of_scope_result()
+        return
     pending: dict[str, tuple[int, str, float]] = {}
     trace: list[dict[str, object]] = []
     seq = 0
