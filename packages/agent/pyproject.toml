@@ -72,6 +72,11 @@ DEP004 = ["pytest", "pook", "psycopg2"]
 # suite only passed when the venv happened to carry the package.
 pythonpath = ["src"]
 
+[tool.uv]
+# Install as a wheel into the workspace venv so sibling packages
+# (e.g. ems-analyst-server tests) can `import ems_analyst_agent`.
+package = true
+
 [tool.coverage.run]
 omit = ["*/test_*.py", "tests/*", "*/main.py", "*/config.py"]
 
