@@ -22,21 +22,7 @@ ems-analyst-mcp = "ems_analyst_mcp.__main__:main"
 
 [tool.uv]
 package = true
-constraint-dependencies = [
-    "cryptography>=48.0.1",     # GHSA-537c-gmf6-5ccf (was ≥46.0.7 for CVE-2026-39892)
-    "pygments>=2.20.0",         # CVE-2026-4539
-    "requests>=2.33.0",         # CVE-2026-25645
-    "aiohttp>=3.14.1",          # PYSEC-2026-237/2104-2113 (was ≥3.13.4)
-    "python-multipart>=0.0.31", # PYSEC-2026-3036/3037/3040 (was ≥0.0.27)
-    "urllib3>=2.7.0",           # CVE-2026-44431, CVE-2026-44432
-    # New pins — all preexisting drift, not introduced by any code change.
-    "joserfc>=1.6.8",           # PYSEC-2026-2528
-    "langsmith>=0.8.18",        # GHSA-f4xh-w4cj-qxq8
-    "mcp>=1.28.1",              # CVE-2026-52869/52870/59950
-    "msgpack>=1.2.1",           # GHSA-6v7p-g79w-8964
-    "pydantic-settings>=2.14.2",# GHSA-4xgf-cpjx-pc3j
-    "starlette>=1.3.1",         # PYSEC-2026-248/249/2280/2281
-]
+# constraint-dependencies live in the workspace-root pyproject — uv ignores them here.
 
 [dependency-groups]
 dev = [
@@ -71,8 +57,7 @@ format = "black ."
 lint = "ruff check"
 typecheck = "ty check"
 audit-src = "bandit -r src/* -s B101,B608"
-# PYSEC-2025-183 (pyjwt 2.12.1) — no fixed version published yet; triage-ignore.
-audit-packages = "pip-audit --ignore-vuln GHSA-4xh5-x5gv-qwph --ignore-vuln GHSA-58qw-9mgm-455v --ignore-vuln PYSEC-2025-183"
+audit-packages = "pip-audit"
 security = ["audit-src", "audit-packages"]
 checks = ["depcheck", "format", "lint", "typecheck", "security"]
 unit = "pytest -vv src/*"
