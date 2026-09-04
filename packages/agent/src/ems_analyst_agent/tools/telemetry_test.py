@@ -246,6 +246,7 @@ class TestBuildDeviceStatus:
         assert isinstance(art.spec, TableSpec)
         assert len(art.spec.rows) == 2
         assert art.spec.row_severity == ["ok", "alarm"]
+        assert art.spec.note == "1 alarm, 1 ok"
 
     @pytest.mark.asyncio
     async def test_no_status_devices_returns_error_artifact(self) -> None:

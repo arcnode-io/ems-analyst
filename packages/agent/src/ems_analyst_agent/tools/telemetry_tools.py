@@ -9,6 +9,7 @@ from typing import Literal
 from pydantic_ai import RunContext
 
 from ..device_api import DeviceApiClient
+from ..schemas import TableSpec
 from ..server_client import ServerClient
 from ._common import Render, _TelemetryDeps, _parse_window, _to_table
 from .site_analytics import build_energy_breakdown, build_markets
@@ -74,7 +75,12 @@ async def get_device_status(ctx: RunContext[_TelemetryDeps]) -> str:
     ctx.deps.artifacts.append(art)
     if art.kind == "error":
         return "No status-reporting devices at this site."
-    return "Returned current status for every status-reporting device."
+    # The LLM never sees the table's rows, only this return string — a
+    # vague "returned the data" here gives it nothing to answer from and
+    # it'll guess (observed: claimed "no alarms" while the table showed
+    # one). Surface the real severity counts so it has something true.
+    assert isinstance(art.spec, TableSpec)
+    return f"Device status: {art.spec.note}."
 
 
 async def query_markets(
