@@ -11,7 +11,7 @@ import logging
 import os
 from collections.abc import AsyncGenerator
 
-from pydantic_ai import Agent as PydanticAgent, RunContext, Tool
+from pydantic_ai import Agent as PydanticAgent, Tool
 from pydantic_ai.messages import ModelMessage
 from ems_analyst_mcp.clients import make_embedder
 
@@ -112,34 +112,6 @@ class Agent:
                 f"{market.settlement_point.value}. Scope LMP and market-data "
                 f"queries to this hub unless the user explicitly asks otherwise."
             )
-
-        @self.agent.system_prompt
-        async def inject_memories(ctx: RunContext[AgentDeps]) -> str:
-            """Retrieve and inject relevant memories into the system prompt.
-
-            Best-effort — semantic recall is an enhancement, not core. A
-            slow or unreachable embedder/vector store skips memory
-            injection rather than failing the user's whole turn.
-            """
-            if not ctx.prompt:
-                return ""
-            try:
-                query_embedding = await ctx.deps.memory_service.generate_embedding(
-                    str(ctx.prompt)
-                )
-                memories = await ctx.deps.memory_service.search_memories(
-                    query_embedding, limit=3
-                )
-            except Exception:
-                log.warning(
-                    "memory recall skipped — embedder/store down", exc_info=True
-                )
-                return ""
-            if memories:
-                return "Relevant memories from previous conversations:\n" + "\n".join(
-                    f"- {memory}" for memory in memories
-                )
-            return ""
 
     def chat(self, prompt: str) -> str:
         """Process a chat prompt and return prose (sync entry).

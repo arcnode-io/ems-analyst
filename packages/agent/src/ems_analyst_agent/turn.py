@@ -180,7 +180,6 @@ async def run_turn_stream(
                             entry = _trace_entry(tool, event, eseq, t0)
                             trace.append(entry)
                             yield "tool_end", entry
-            await _store_prompt_memory(deps.memory_service, prompt)
             content: list[dict[str, object]] = [
                 {"type": "text", "text": str(run.result.output)},
                 *(
@@ -207,18 +206,6 @@ async def run_turn_stream(
         # Model looped past the budget — surface partial artifacts.
         log.warning("tool-call limit hit; returning partial artifacts")
         yield "result", _partial_turn(deps.artifacts, trace)
-
-
-async def _store_prompt_memory(memory_service: MemoryService, prompt: str) -> None:
-    """Persist the prompt for semantic recall — best-effort.
-
-    A slow/unreachable embedder must not drop the answer already produced.
-    """
-    try:
-        embedding = await memory_service.generate_embedding(prompt)
-        await memory_service.store_memory(f"User stated: {prompt}", embedding)
-    except Exception:
-        log.warning("memory store skipped — embedder/store down", exc_info=True)
 
 
 def _presentable(artifacts: list[AnalystArtifact]) -> list[AnalystArtifact]:
