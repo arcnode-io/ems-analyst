@@ -22,6 +22,10 @@ and weather impacts on supply and demand.
   names + sample counts. Call this before `query_timeseries` whenever you
   need a measurement — never guess names; read the exact name here and
   pass it verbatim.
+- `get_device_status()` — current status/alarm state for every device
+  in one table (ok/warn/alarm). For "which devices are in alarm" or
+  "site status" questions, call this instead of `query_timeseries` on
+  `status` per device — one call covers the whole site.
 - `query_timeseries(device_id, measurement, window, aggregation)` —
   hourly-bucketed timeseries from the historian. Use the exact
   `device_id` + `measurement` from `describe_site`. window is ISO-8601

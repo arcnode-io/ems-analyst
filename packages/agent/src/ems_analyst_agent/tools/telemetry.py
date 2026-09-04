@@ -8,9 +8,25 @@ live in `site_analytics.py`; RunContext wrappers in `telemetry_tools.py`.
 from datetime import UTC, datetime, timedelta
 
 from ..isotime import iso_z
-from ..schemas import AnalystArtifact, LineSpec, TableSpec
+from ..schemas import AnalystArtifact, LineSpec, RowSeverity, TableSpec
 from ..server_client import Aggregation, ServerClient
 from ._common import _error_artifact, _fmt_window
+
+_STATUS_MEASUREMENT: str = "status"
+_STATUS_WINDOW: timedelta = timedelta(hours=24)
+
+
+def _severity(state: str) -> RowSeverity | None:
+    """Map a status value to a table row severity, or None if unrecognized."""
+    match state:
+        case "ok":
+            return "ok"
+        case "warn":
+            return "warn"
+        case "alarm":
+            return "alarm"
+        case _:
+            return None
 
 
 async def build_timeseries(
@@ -101,3 +117,62 @@ async def build_site_description(client: ServerClient) -> AnalystArtifact:
     return AnalystArtifact.model_validate(
         {"kind": "table", "spec": spec.model_dump(by_alias=True)}
     )
+
+
+async def build_device_status(client: ServerClient) -> AnalystArtifact:
+    """Current status for every device that publishes one — one table.
+
+    One tool call instead of one query_timeseries('status') per device:
+    describe_site tells us which devices have a status measurement, then
+    each is queried for its latest value and folded into a single table.
+    """
+    desc = await client.describe_site()
+    device_ids = [
+        p.device_id for p in desc.pairs if p.measurement == _STATUS_MEASUREMENT
+    ]
+    if not device_ids:
+        return _error_artifact("not_found", "No status-reporting devices at this site.")
+    end = datetime.now(UTC)
+    start = end - _STATUS_WINDOW
+    rows: list[dict[str, str]] = []
+    severities: list[RowSeverity | None] = []
+    for device_id in device_ids:
+        series = await client.get_measurements(
+            device_id=device_id,
+            measurement=_STATUS_MEASUREMENT,
+            start=start,
+            end=end,
+            aggregation="last",
+        )
+        latest = next(
+            (p.value for p in reversed(series.points) if p.value is not None), None
+        )
+        state = str(latest) if latest is not None else "unknown"
+        rows.append({"device": device_id, "status": state})
+        severities.append(_severity(state))
+    spec = TableSpec.model_validate(
+        {
+            "title": "Device status",
+            "columns": [
+                {"key": "device", "label": "Device"},
+                {"key": "status", "label": "Status"},
+            ],
+            "rows": rows,
+            "rowSeverity": severities,
+            "dataAsOf": iso_z(),
+            "note": _status_note(rows),
+        }
+    )
+    return AnalystArtifact.model_validate(
+        {"kind": "table", "spec": spec.model_dump(by_alias=True)}
+    )
+
+
+def _status_note(rows: list[dict[str, str]]) -> str:
+    """One-line severity summary, e.g. '1 alarm, 1 warn, 4 ok'."""
+    counts: dict[str, int] = {}
+    for row in rows:
+        counts[row["status"]] = counts.get(row["status"], 0) + 1
+    ordered = [s for s in ("alarm", "warn", "ok") if s in counts]
+    ordered += [s for s in counts if s not in ordered]
+    return ", ".join(f"{counts[s]} {s}" for s in ordered)

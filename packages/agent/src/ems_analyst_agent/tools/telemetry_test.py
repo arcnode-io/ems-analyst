@@ -17,7 +17,7 @@ from ..server_client import (
     SiteDescription,
 )
 from ._common import _parse_window
-from .telemetry import build_site_description, build_timeseries
+from .telemetry import build_device_status, build_site_description, build_timeseries
 
 
 class _FakeServerClient:
@@ -27,13 +27,17 @@ class _FakeServerClient:
         self,
         measurements: MeasurementSeries | None = None,
         description: SiteDescription | None = None,
+        measurements_by_device: dict[str, MeasurementSeries] | None = None,
     ) -> None:
         self._measurements = measurements
         self._description = description
+        self._measurements_by_device = measurements_by_device
         self.calls: list[tuple[str, dict[str, object]]] = []
 
     async def get_measurements(self, **kwargs: object) -> MeasurementSeries:
         self.calls.append(("get_measurements", kwargs))
+        if self._measurements_by_device is not None:
+            return self._measurements_by_device[str(kwargs["device_id"])]
         assert self._measurements is not None
         return self._measurements
 
@@ -185,6 +189,81 @@ class TestBuildSiteDescription:
 
         # Act
         art = await build_site_description(fake)  # ty: ignore[invalid-argument-type]
+
+        # Assert
+        assert art.kind == "error"
+
+
+class TestBuildDeviceStatus:
+    """AAA — build_device_status collapses per-device status into one table.
+
+    One tool call instead of one query_timeseries per device — the gap
+    that made "list devices in alarm" burn most of the 10-tool-call
+    budget iterating devices one at a time.
+    """
+
+    @pytest.mark.asyncio
+    async def test_renders_one_table_row_per_status_device(self) -> None:
+        # Arrange — active_power pair should be excluded; only status pairs count
+        desc = SiteDescription(
+            site_id="demo-site",
+            pairs=[
+                MeasurementPair(
+                    device_id="bess_module_01", measurement="active_power", samples=712
+                ),
+                MeasurementPair(
+                    device_id="bess_module_01", measurement="status", samples=1
+                ),
+                MeasurementPair(device_id="cdu_01", measurement="status", samples=1),
+            ],
+        )
+        ts = datetime(2026, 5, 18, 1, tzinfo=UTC)
+        fake = _FakeServerClient(
+            description=desc,
+            measurements_by_device={
+                "bess_module_01": MeasurementSeries(
+                    site_id="demo-site",
+                    device_id="bess_module_01",
+                    measurement="status",
+                    unit="enum",
+                    points=[MeasurementPoint(ts=ts, value="ok")],
+                ),
+                "cdu_01": MeasurementSeries(
+                    site_id="demo-site",
+                    device_id="cdu_01",
+                    measurement="status",
+                    unit="enum",
+                    points=[MeasurementPoint(ts=ts, value="alarm")],
+                ),
+            },
+        )
+
+        # Act
+        art = await build_device_status(fake)  # ty: ignore[invalid-argument-type]
+
+        # Assert — one row per status device, severity carried per row
+        assert art.kind == "table"
+        assert isinstance(art.spec, TableSpec)
+        assert len(art.spec.rows) == 2
+        assert art.spec.row_severity == ["ok", "alarm"]
+
+    @pytest.mark.asyncio
+    async def test_no_status_devices_returns_error_artifact(self) -> None:
+        # Arrange
+        desc = SiteDescription(
+            site_id="demo-site",
+            pairs=[
+                MeasurementPair(
+                    device_id="market_01",
+                    measurement="dam_clearing_price_usd_per_mwh",
+                    samples=712,
+                )
+            ],
+        )
+        fake = _FakeServerClient(description=desc)
+
+        # Act
+        art = await build_device_status(fake)  # ty: ignore[invalid-argument-type]
 
         # Assert
         assert art.kind == "error"

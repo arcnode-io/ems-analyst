@@ -36,6 +36,7 @@ _TOOL_CALL_LIMIT: int = 10
 _TOOL_LABELS: dict[str, str] = {
     "describe_site": "Checking what data is queryable",
     "get_topology": "Reading site topology",
+    "get_device_status": "Checking device status",
     "query_timeseries": "Querying the site historian",
     "get_forecast": "Pulling the published forecast",
     "query_markets": "Computing market revenue",

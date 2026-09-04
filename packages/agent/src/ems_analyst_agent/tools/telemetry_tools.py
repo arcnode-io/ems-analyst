@@ -12,7 +12,7 @@ from ..device_api import DeviceApiClient
 from ..server_client import ServerClient
 from ._common import Render, _TelemetryDeps, _parse_window, _to_table
 from .site_analytics import build_energy_breakdown, build_markets
-from .telemetry import build_site_description, build_timeseries
+from .telemetry import build_device_status, build_site_description, build_timeseries
 
 
 async def query_timeseries(
@@ -59,6 +59,22 @@ async def describe_site(ctx: RunContext[_TelemetryDeps]) -> str:
     art = await build_site_description(client)
     ctx.deps.artifacts.append(art)
     return "Returned the queryable device+measurement inventory."
+
+
+async def get_device_status(ctx: RunContext[_TelemetryDeps]) -> str:
+    """Current status/alarm state for every status-reporting device — one table.
+
+    Prefer this over calling query_timeseries('status') per device — it's
+    one tool call instead of N, and answers "which devices are in alarm"
+    directly.
+    """
+    client = ctx.deps.server
+    assert isinstance(client, ServerClient)
+    art = await build_device_status(client)
+    ctx.deps.artifacts.append(art)
+    if art.kind == "error":
+        return "No status-reporting devices at this site."
+    return "Returned current status for every status-reporting device."
 
 
 async def query_markets(

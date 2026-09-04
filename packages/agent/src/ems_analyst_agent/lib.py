@@ -27,6 +27,7 @@ from .tools.geopolitical import get_energy_news
 from .tools.markets import get_market_data
 from .tools.telemetry_tools import (
     describe_site,
+    get_device_status,
     query_energy_breakdown,
     query_markets,
     query_timeseries,
@@ -81,6 +82,7 @@ class Agent:
             Tool(get_energy_news),
             Tool(get_topology),
             Tool(describe_site),
+            Tool(get_device_status),
             Tool(query_timeseries),
             Tool(get_forecast),
             Tool(query_markets),
