@@ -27,10 +27,14 @@ Aggregation = Literal["mean", "max", "min", "last"]
 
 
 class MeasurementPoint(BaseModel):
-    """One bucketed point — value=None for empty buckets."""
+    """One bucketed point — value=None for empty buckets.
+
+    Most measurements are numeric, but enum-typed ones (e.g. device
+    `status`: ok/warn/alarm) publish a string value.
+    """
 
     ts: datetime
-    value: float | None
+    value: float | str | None
 
 
 class MeasurementSeries(BaseModel):

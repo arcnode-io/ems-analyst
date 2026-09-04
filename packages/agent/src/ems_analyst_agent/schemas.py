@@ -62,10 +62,14 @@ class BarAxis(_Camel):
 
 
 class LinePoint(_Camel):
-    """One (x, y) point in a LineSeries; y may be None for no-data."""
+    """One (x, y) point in a LineSeries; y may be None for no-data.
+
+    y is usually numeric, but an enum-typed measurement (e.g. device
+    `status`: ok/warn/alarm) carries a string value instead.
+    """
 
     x: float | str
-    y: float | None
+    y: float | str | None
 
 
 class LineSeries(_Camel):

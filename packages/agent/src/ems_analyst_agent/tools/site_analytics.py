@@ -28,14 +28,19 @@ async def _bucketed_series(
     start: datetime,
     end: datetime,
 ) -> dict[datetime, float]:
-    """Hourly bucketed series as {ts: value} dict (null buckets dropped)."""
+    """Hourly bucketed series as {ts: value} dict (null/non-numeric dropped).
+
+    Revenue + energy math is numeric-only by contract — a categorical
+    measurement (e.g. status) has no place in this path, so it's filtered
+    out here rather than crashing the arithmetic below.
+    """
     series = await client.get_measurements(
         device_id=device_id,
         measurement=measurement,
         start=start,
         end=end,
     )
-    return {p.ts: p.value for p in series.points if p.value is not None}
+    return {p.ts: p.value for p in series.points if isinstance(p.value, float)}
 
 
 def _revenue(

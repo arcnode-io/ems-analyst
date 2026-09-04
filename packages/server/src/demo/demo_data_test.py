@@ -58,6 +58,28 @@ class TestDemoDataMeasurements:
         # Assert — buckets present, all None
         assert all(p.value is None for p in actual.points)
 
+    @pytest.mark.asyncio
+    async def test_get_categorical_status_value_not_coerced_to_float(
+        self, demo: DemoData
+    ) -> None:
+        # Arrange — status is an enum (ok/warn/alarm), not a numeric series
+        start = datetime(2000, 1, 1, tzinfo=UTC)
+        end = datetime.now(UTC) + timedelta(days=1)
+
+        # Act
+        actual = await demo.get(
+            site_id=_SITE,
+            device_id="cdu_01",
+            measurement="status",
+            start=start,
+            end=end,
+            aggregation="last",
+        )
+
+        # Assert — the string value survives; no float() coercion crash
+        values = [p.value for p in actual.points if p.value is not None]
+        assert values == ["alarm"]
+
 
 class TestDemoDataDescribe:
     @pytest.mark.asyncio

@@ -43,7 +43,13 @@ async def build_timeseries(
         for p in series.points
     ]
     ys = [p.value for p in series.points if p.value is not None]
-    note = f"{min(ys):g}-{max(ys):g} {series.unit}, latest {ys[-1]:g}" if ys else None
+    numeric_ys = [y for y in ys if isinstance(y, float)]
+    if not ys:
+        note = None
+    elif len(numeric_ys) == len(ys):
+        note = f"{min(numeric_ys):g}-{max(numeric_ys):g} {series.unit}, latest {numeric_ys[-1]:g}"
+    else:
+        note = f"latest {ys[-1]} {series.unit}".strip()
     spec = LineSpec.model_validate(
         {
             "title": (

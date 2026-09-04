@@ -28,15 +28,23 @@ _PKG_DATA: Final[str] = "ems_analyst_agent.demo_data"
 _CSV_NAME: Final[str] = "measurements.csv"
 
 
-def _agg(values: list[float], how: Aggregation) -> float:
-    """Aggregate a bucket's values per the requested function."""
-    if how == "max":
-        return max(values)
-    if how == "min":
-        return min(values)
-    if how == "last":
+def _agg(values: list[float | str], how: Aggregation) -> float | str:
+    """Aggregate a bucket's values per the requested function.
+
+    Categorical (str) values ignore the aggregation function — mean/max/min
+    are meaningless for an enum like status — and always return the latest
+    reading.
+    """
+    numeric = [v for v in values if isinstance(v, float)]
+    if len(numeric) != len(values):
         return values[-1]
-    return sum(values) / len(values)
+    if how == "max":
+        return max(numeric)
+    if how == "min":
+        return min(numeric)
+    if how == "last":
+        return numeric[-1]
+    return sum(numeric) / len(numeric)
 
 
 class _Row:
@@ -109,7 +117,7 @@ class DemoData:
         aggregation: Aggregation = "mean",
     ) -> MeasurementSeries:
         """Hourly-bucketed gap-filled series — mirrors MeasurementsService."""
-        buckets: dict[datetime, list[float]] = {}
+        buckets: dict[datetime, list[float | str]] = {}
         unit = ""
         for row in self._rows:
             if (
@@ -121,7 +129,8 @@ class DemoData:
                 continue
             unit = row.unit
             bucket = row.ts.replace(minute=0, second=0, microsecond=0)
-            buckets.setdefault(bucket, []).append(float(json.loads(row.value)))
+            parsed: float | str = json.loads(row.value)
+            buckets.setdefault(bucket, []).append(parsed)
         points: list[MeasurementPoint] = []
         cursor = start.replace(minute=0, second=0, microsecond=0)
         end_hour = end.replace(minute=0, second=0, microsecond=0)

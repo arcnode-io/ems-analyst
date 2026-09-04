@@ -94,6 +94,33 @@ class TestBuildTimeseries:
         assert "BESS-01 power_kw" in art.spec.title
 
     @pytest.mark.asyncio
+    async def test_renders_line_chart_from_categorical_points(self) -> None:
+        # Arrange — status/alarm-style enum value, not a numeric measurement
+        ts = datetime(2026, 5, 18, 1, tzinfo=UTC)
+        series = MeasurementSeries(
+            site_id="site-A",
+            device_id="cdu_01",
+            measurement="status",
+            unit="enum",
+            points=[MeasurementPoint(ts=ts, value="alarm")],
+        )
+        fake = _FakeServerClient(measurements=series)
+
+        # Act
+        art = await build_timeseries(
+            fake,  # ty: ignore[invalid-argument-type]
+            device_id="cdu_01",
+            measurement="status",
+            window=timedelta(hours=2),
+            aggregation="last",
+        )
+
+        # Assert — no crash formatting a non-numeric note; value passes through
+        assert art.kind == "line"
+        assert isinstance(art.spec, LineSpec)
+        assert art.spec.series[0].points[0].y == "alarm"
+
+    @pytest.mark.asyncio
     async def test_empty_points_returns_error_artifact(self) -> None:
         # Arrange
         series = MeasurementSeries(
