@@ -5,9 +5,12 @@ generic coding) is rejected with a canned refusal in ~1s, saving the
 gemma4:26b 15s/turn cost on irrelevant input.
 
 The anchor set covers the analyst's actual domain — power markets,
-BESS, grid protocols, weather → demand, regulatory. Tune threshold
-with an eval set; default biased toward letting queries through
-(false-allow is cheaper than false-reject).
+BESS, grid protocols, weather → demand, regulatory, device status.
+Threshold empirically tuned against the live qwen3-embedding:4b
+endpoint (2026-09-04): off-domain queries ("implement fibonacci",
+"capital of France") scored 0.25-0.45 against the original anchor
+set — 0.30 let them through. 0.48 sits above that noise floor and
+below the lowest in-domain score observed (0.53).
 """
 
 from __future__ import annotations
@@ -41,12 +44,12 @@ _ANCHORS: tuple[str, ...] = (
     "Grid frequency regulation",
     "Power factor correction",
     "Battery degradation curves",
+    "Which devices are currently in alarm or fault state",
+    "Check equipment status across the site",
 )
 
-# Biased low — false-allow is cheaper than false-reject. Tune up once
-# an eval set exists. Different embedders have different in-domain
-# cosine ranges; qwen3-embedding hasn't been empirically tuned here.
-_DEFAULT_THRESHOLD: float = 0.30
+# Empirically tuned against qwen3-embedding:4b — see module docstring.
+_DEFAULT_THRESHOLD: float = 0.48
 
 
 class ScopeFilter:

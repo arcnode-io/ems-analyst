@@ -3,7 +3,7 @@
 import pytest
 from ems_analyst_mcp.clients import Embedder
 
-from .scope_filter import ScopeFilter
+from .scope_filter import _ANCHORS, _DEFAULT_THRESHOLD, ScopeFilter
 
 
 class _FakeEmbedder(Embedder):
@@ -57,3 +57,21 @@ class TestInScope:
         # Act + Assert
         assert await permissive.in_scope("q") is True
         assert await strict.in_scope("q") is False
+
+
+class TestTunedDefaults:
+    """Locks in the live-embedder-probed production config (2026-09-04).
+
+    qwen3-embedding:4b's off-domain noise floor measured 0.25-0.45 against
+    the pre-fix anchor set/threshold — "implement fibonacci in python" and
+    "capital of France" both passed at 0.30. See scope_filter.py's
+    docstring for the probe numbers.
+    """
+
+    def test_threshold_above_measured_off_domain_noise_floor(self) -> None:
+        assert _DEFAULT_THRESHOLD >= 0.45
+
+    def test_anchors_cover_device_status_and_alarm_queries(self) -> None:
+        # "list devices in alarm" scored 0.37 against the original 20
+        # anchors — same band as off-domain noise, needed its own anchor.
+        assert any("alarm" in a.lower() for a in _ANCHORS)
