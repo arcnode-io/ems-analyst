@@ -169,10 +169,23 @@ async def build_device_status(client: ServerClient) -> AnalystArtifact:
 
 
 def _status_note(rows: list[dict[str, str]]) -> str:
-    """One-line severity summary, e.g. '1 alarm, 1 warn, 4 ok'."""
-    counts: dict[str, int] = {}
+    """One-line severity summary, naming devices that aren't ok.
+
+    e.g. '1 alarm (cdu_01), 1 warn (bess_module_02), 3 ok' — this is the
+    only thing the LLM reads back (it never sees the table's rows), so
+    non-ok devices need to be named here or it has to go fishing with
+    other tools to find out which device is the problem.
+    """
+    devices_by_status: dict[str, list[str]] = {}
     for row in rows:
-        counts[row["status"]] = counts.get(row["status"], 0) + 1
-    ordered = [s for s in ("alarm", "warn", "ok") if s in counts]
-    ordered += [s for s in counts if s not in ordered]
-    return ", ".join(f"{counts[s]} {s}" for s in ordered)
+        devices_by_status.setdefault(row["status"], []).append(row["device"])
+    ordered = [s for s in ("alarm", "warn", "ok") if s in devices_by_status]
+    ordered += [s for s in devices_by_status if s not in ordered]
+    parts = []
+    for status in ordered:
+        devices = devices_by_status[status]
+        if status == "ok":
+            parts.append(f"{len(devices)} {status}")
+        else:
+            parts.append(f"{len(devices)} {status} ({', '.join(devices)})")
+    return ", ".join(parts)
