@@ -105,12 +105,15 @@ async def build_explain_dispatch(
             ),
         }
     )
+    # Dispatch first, price last: the HMI canvas renders a turn's artifact
+    # list newest-first, and "price spike -> battery responds" reads right
+    # with price on top.
     artifacts = [
         AnalystArtifact.model_validate(
-            {"kind": "line", "spec": price_spec.model_dump(by_alias=True)}
+            {"kind": "line", "spec": dispatch_spec.model_dump(by_alias=True)}
         ),
         AnalystArtifact.model_validate(
-            {"kind": "line", "spec": dispatch_spec.model_dump(by_alias=True)}
+            {"kind": "line", "spec": price_spec.model_dump(by_alias=True)}
         ),
     ]
     return artifacts, stats

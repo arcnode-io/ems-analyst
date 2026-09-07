@@ -73,14 +73,16 @@ class TestBuildExplainDispatch:
             timedelta(hours=3),
         )
 
-        # Assert — price chart, then dispatch chart, both line kind
+        # Assert — dispatch chart, then price chart (HMI renders the list's
+        # last entry on top; price-on-top reads better for "price spike ->
+        # battery responds"), both line kind
         assert len(artifacts) == 2
         assert artifacts[0].kind == "line"
         assert artifacts[1].kind == "line"
         assert isinstance(artifacts[0].spec, LineSpec)
         assert isinstance(artifacts[1].spec, LineSpec)
-        assert "DAM clearing price" in artifacts[0].spec.title
-        assert "bess_module_01 net dispatch" in artifacts[1].spec.title
+        assert "bess_module_01 net dispatch" in artifacts[0].spec.title
+        assert "DAM clearing price" in artifacts[1].spec.title
         assert stats is not None
         assert stats.discharge_hours == 1
 
