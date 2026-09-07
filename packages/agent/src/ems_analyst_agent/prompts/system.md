@@ -26,6 +26,11 @@ and weather impacts on supply and demand.
   in one table (ok/warn/alarm). For "which devices are in alarm" or
   "site status" questions, call this instead of `query_timeseries` on
   `status` per device — one call covers the whole site.
+- `explain_dispatch(device_id, window)` — why a BESS charged/discharged:
+  correlates the DAM price against its dispatch, deterministically. For
+  "why did the battery charge/discharge" questions, call this instead of
+  reconstructing it from `query_timeseries` — it returns the peak-price
+  window, revenue, spread, and SoC swing directly.
 - `query_timeseries(device_id, measurement, window, aggregation)` —
   hourly-bucketed timeseries from the historian. Use the exact
   `device_id` + `measurement` from `describe_site`. window is ISO-8601

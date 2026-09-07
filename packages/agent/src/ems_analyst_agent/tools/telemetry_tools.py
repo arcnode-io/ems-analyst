@@ -12,6 +12,7 @@ from ..device_api import DeviceApiClient
 from ..schemas import TableSpec
 from ..server_client import ServerClient
 from ._common import Render, _TelemetryDeps, _parse_window, _to_table
+from .dispatch_explain_artifact import build_explain_dispatch
 from .site_analytics import build_energy_breakdown, build_markets
 from .telemetry import build_device_status, build_site_description, build_timeseries
 
@@ -55,9 +56,15 @@ async def describe_site(ctx: RunContext[_TelemetryDeps]) -> str:
     'dam_clearing_price_usd_per_mwh'. Covers non-device series (e.g.
     market price feeds) that get_topology won't show.
     """
+    # Code-enforced once-per-turn: system.md says "at most once" but the
+    # model routinely ignored it, burning tool-call budget on repeats.
+    if ctx.deps.site_description_cache is not None:
+        ctx.deps.artifacts.append(ctx.deps.site_description_cache)
+        return "(already have the site inventory from earlier this turn)"
     client = ctx.deps.server
     assert isinstance(client, ServerClient)
     art = await build_site_description(client)
+    ctx.deps.site_description_cache = art
     ctx.deps.artifacts.append(art)
     return "Returned the queryable device+measurement inventory."
 
@@ -81,6 +88,52 @@ async def get_device_status(ctx: RunContext[_TelemetryDeps]) -> str:
     # one). Surface the real severity counts so it has something true.
     assert isinstance(art.spec, TableSpec)
     return f"Device status: {art.spec.note}."
+
+
+async def explain_dispatch(
+    ctx: RunContext[_TelemetryDeps],
+    device_id: str,
+    window: str = "24h",
+) -> str:
+    """Why did a BESS device charge/discharge — price vs. dispatch, deterministic.
+
+    For "why did the battery charge/discharge" questions, call this
+    instead of reconstructing it from query_timeseries — it correlates
+    the DAM price against dispatch and returns the actual numbers
+    (median/peak price, hours, revenue, spread, SoC swing) below. No LLM
+    in the math.
+
+    Args:
+        device_id: A BESS device (e.g. bess_module_01).
+        window: ISO-8601 duration ("PT24H") or shorthand ("24h","7d").
+    """
+    td = _parse_window(window)
+    client = ctx.deps.server
+    assert isinstance(client, ServerClient)
+    artifacts, stats = await build_explain_dispatch(client, device_id, td)
+    ctx.deps.artifacts.extend(artifacts)
+    if stats is None:
+        return f"No price data for {device_id} over {window}."
+    peak = (
+        f"{stats.peak_start:%H:%M}-{stats.peak_end:%H:%M}"
+        if stats.peak_start and stats.peak_end
+        else "no clear peak"
+    )
+    action = "discharged" if stats.peak_dispatch_confirmed else "did not discharge"
+    spread = f"${stats.spread:.0f}/MWh" if stats.spread is not None else "n/a"
+    soc = (
+        f"{stats.soc_min:.0f}%->{stats.soc_max:.0f}%"
+        if stats.soc_min is not None and stats.soc_max is not None
+        else "n/a"
+    )
+    return (
+        f"{device_id} {action} across the {peak} peak "
+        f"(avg ${stats.peak_avg_price or 0:.0f} vs ${stats.median_price:.0f} median). "
+        f"Dispatch: {stats.discharge_hours}h discharge, {stats.charge_hours}h charge. "
+        f"SoC {soc}. Revenue ${stats.net_revenue:,.0f} "
+        f"(discharge ${stats.discharge_revenue:,.0f}, "
+        f"charge cost ${stats.charge_cost:,.0f}); spread {spread}."
+    )
 
 
 async def query_markets(

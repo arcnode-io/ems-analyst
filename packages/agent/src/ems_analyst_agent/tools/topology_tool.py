@@ -51,10 +51,16 @@ async def get_topology(ctx: RunContext[_TelemetryDeps]) -> str:
     Call this to answer questions about site layout, what equipment
     exists, or how devices roll up (parent chains).
     """
+    # Code-enforced once-per-turn: system.md says "at most once" but the
+    # model routinely ignored it, burning tool-call budget on repeats.
+    if ctx.deps.topology_cache is not None:
+        ctx.deps.artifacts.append(ctx.deps.topology_cache)
+        return "(already have the site topology from earlier this turn)"
     client = ctx.deps.device_api
     assert isinstance(client, DeviceApiClient)
     dtm = await client.get_topology()
     art = build_topology(dtm)
+    ctx.deps.topology_cache = art
     ctx.deps.artifacts.append(art)
     if art.kind == "error":
         return "Topology is empty."

@@ -25,11 +25,21 @@ class _TelemetryDeps:
     assembles the reply from it. `server` / `device_api` are the REST
     clients (typed `object` so tools stay decoupled from the concrete
     client classes).
+
+    `site_description_cache` / `topology_cache` back the once-per-turn
+    guard on `describe_site` / `get_topology` — their results don't
+    change mid-conversation, but the "at most once" rule in system.md
+    was routinely ignored by the model, burning tool-call budget on
+    repeat fetches. Enforced in code instead: a fresh `AgentDeps` (and
+    so a fresh cache) is constructed per turn, so this can't leak state
+    across turns.
     """
 
     artifacts: list[AnalystArtifact] = field(default_factory=list)
     server: object | None = None
     device_api: object | None = None
+    site_description_cache: AnalystArtifact | None = None
+    topology_cache: AnalystArtifact | None = None
 
 
 def _parse_window(window: str) -> timedelta:

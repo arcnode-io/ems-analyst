@@ -37,6 +37,7 @@ _TOOL_LABELS: dict[str, str] = {
     "describe_site": "Checking what data is queryable",
     "get_topology": "Reading site topology",
     "get_device_status": "Checking device status",
+    "explain_dispatch": "Correlating dispatch against price",
     "query_timeseries": "Querying the site historian",
     "get_forecast": "Pulling the published forecast",
     "query_markets": "Computing market revenue",
@@ -60,7 +61,10 @@ class AgentDeps:
     `artifacts` is the sink telemetry tools append to; the turn assembles
     the final AnalystMessage from prose + this list. `server` is the REST
     client over ems-analyst-server; `device_api` the client over
-    ems-device-api (the DTM source of truth).
+    ems-device-api (the DTM source of truth). `site_description_cache` /
+    `topology_cache` / `focused_device_id` mirror `_TelemetryDeps` — see
+    its docstring. Constructed fresh per turn, so nothing here persists
+    across turns.
     """
 
     def __init__(
@@ -68,11 +72,15 @@ class AgentDeps:
         memory_service: MemoryService,
         server: ServerClient,
         device_api: DeviceApiClient,
+        focused_device_id: str | None = None,
     ) -> None:
         self.memory_service = memory_service
         self.server = server
         self.device_api = device_api
+        self.focused_device_id = focused_device_id
         self.artifacts: list[AnalystArtifact] = []
+        self.site_description_cache: AnalystArtifact | None = None
+        self.topology_cache: AnalystArtifact | None = None
 
 
 @dataclass

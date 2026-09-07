@@ -38,6 +38,7 @@ class _FakeAgent:
 
     def __init__(self) -> None:
         self.calls: list[tuple[str, list[object]]] = []
+        self.focused_device_ids: list[str | None] = []
 
     def _turn(self, prompt: str) -> ChatTurnResult:
         return ChatTurnResult(
@@ -51,16 +52,26 @@ class _FakeAgent:
         )
 
     async def chat_turn(
-        self, prompt: str, *, message_history: list[object] | None = None
+        self,
+        prompt: str,
+        *,
+        message_history: list[object] | None = None,
+        focused_device_id: str | None = None,
     ) -> ChatTurnResult:
         self.calls.append((prompt, list(message_history or [])))
+        self.focused_device_ids.append(focused_device_id)
         return self._turn(prompt)
 
     async def chat_turn_stream(
-        self, prompt: str, *, message_history: list[object] | None = None
+        self,
+        prompt: str,
+        *,
+        message_history: list[object] | None = None,
+        focused_device_id: str | None = None,
     ) -> object:
         """Async-gen stand-in — a tool_start/tool_end pair then the result."""
         self.calls.append((prompt, list(message_history or [])))
+        self.focused_device_ids.append(focused_device_id)
         yield "tool_start", {"seq": 1, "tool": "describe_site", "label": "L"}
         yield (
             "tool_end",
@@ -150,6 +161,44 @@ class TestHandleTurn:
         # Act + Assert
         with pytest.raises(SiteIdMismatchError, match="this deployment"):
             await svc.handle_turn(req)
+
+
+class TestFocusedDeviceId:
+    """AAA — context.focusedDeviceId forwards from the request to the agent."""
+
+    @pytest.mark.asyncio
+    async def test_handle_turn_forwards_focused_device_id(self) -> None:
+        # Arrange
+        svc, _, agent = _service_with_fakes()
+        svc._baked_site_id = "site-a"
+        req = AnalystChatRequest(
+            conversation_id="77777777-7777-7777-7777-777777777777",
+            message="why did it discharge",
+            context=ChatContext(site_id="site-a", focused_device_id="bess_module_01"),
+        )
+
+        # Act
+        await svc.handle_turn(req)
+
+        # Assert
+        assert agent.focused_device_ids == ["bess_module_01"]
+
+    @pytest.mark.asyncio
+    async def test_handle_turn_forwards_none_when_absent(self) -> None:
+        # Arrange
+        svc, _, agent = _service_with_fakes()
+        svc._baked_site_id = "site-a"
+        req = AnalystChatRequest(
+            conversation_id="88888888-8888-8888-8888-888888888888",
+            message="hi",
+            context=ChatContext(site_id="site-a"),
+        )
+
+        # Act
+        await svc.handle_turn(req)
+
+        # Assert
+        assert agent.focused_device_ids == [None]
 
 
 class _CrashingStore:

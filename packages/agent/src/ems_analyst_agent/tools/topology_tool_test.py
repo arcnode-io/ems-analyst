@@ -1,8 +1,16 @@
-"""Unit tests for build_topology — DtmView → TableSpec."""
+"""Unit tests for build_topology — DtmView → TableSpec — and get_topology's
+once-per-turn cache guard.
+"""
 
-from ..device_api import DtmView
+from dataclasses import dataclass
+from unittest.mock import AsyncMock, Mock
+
+import pytest
+
+from ..device_api import DeviceApiClient, DtmView
 from ..schemas import TableSpec
-from .topology_tool import build_topology
+from ._common import _TelemetryDeps
+from .topology_tool import build_topology, get_topology
 
 _DTM = {
     "deployment_uuid": "00000000-0000-0000-0000-000000000001",
@@ -50,3 +58,32 @@ def test_build_topology_empty_dtm_returns_error() -> None:
 
     # Assert
     assert art.kind == "error"
+
+
+@dataclass
+class _FakeCtx:
+    """Minimal RunContext stand-in — the wrapper only ever reads `.deps`."""
+
+    deps: _TelemetryDeps
+
+
+class TestGetTopologyCache:
+    """AAA — a repeat get_topology call in the same turn skips the refetch."""
+
+    @pytest.mark.asyncio
+    async def test_second_call_reuses_cache_without_refetching(self) -> None:
+        # Arrange — Mock(spec=...) satisfies the wrapper's isinstance guard
+        dtm = DtmView.model_validate(_DTM)
+        fake_client = Mock(spec=DeviceApiClient)
+        fake_client.get_topology = AsyncMock(return_value=dtm)
+        deps = _TelemetryDeps(device_api=fake_client)
+        ctx = _FakeCtx(deps=deps)
+
+        # Act
+        await get_topology(ctx)  # ty: ignore[invalid-argument-type]
+        second_result = await get_topology(ctx)  # ty: ignore[invalid-argument-type]
+
+        # Assert — device-api hit once; second call served from cache
+        assert fake_client.get_topology.call_count == 1
+        assert "already have" in second_result.lower()
+        assert len(deps.artifacts) == 2  # both appended; _presentable dedupes later

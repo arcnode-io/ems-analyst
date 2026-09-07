@@ -12,8 +12,13 @@ from ..schemas import AnalystArtifact, LineSpec, RowSeverity, TableSpec
 from ..server_client import Aggregation, ServerClient
 from ._common import _error_artifact, _fmt_window
 
+# Reason: the demo CSV pins every measurement's freshest sample to the
+# container's load-time "now"; a 712-sample series has slack across any
+# gap before a query, but `status` has exactly 1 sample per device — zero
+# redundancy. 24h left it stale after any same-day gap between deploy and
+# demo. 30d matches the seed's full span so it survives to the next reseed.
 _STATUS_MEASUREMENT: str = "status"
-_STATUS_WINDOW: timedelta = timedelta(hours=24)
+_STATUS_WINDOW: timedelta = timedelta(days=30)
 
 
 def _severity(state: str) -> RowSeverity | None:

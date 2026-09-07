@@ -11,7 +11,7 @@ import logging
 import os
 from collections.abc import AsyncGenerator
 
-from pydantic_ai import Agent as PydanticAgent, Tool
+from pydantic_ai import Agent as PydanticAgent, RunContext, Tool
 from pydantic_ai.messages import ModelMessage
 from ems_analyst_mcp.clients import make_embedder
 
@@ -27,6 +27,7 @@ from .tools.geopolitical import get_energy_news
 from .tools.markets import get_market_data
 from .tools.telemetry_tools import (
     describe_site,
+    explain_dispatch,
     get_device_status,
     query_energy_breakdown,
     query_markets,
@@ -83,6 +84,7 @@ class Agent:
             Tool(get_topology),
             Tool(describe_site),
             Tool(get_device_status),
+            Tool(explain_dispatch),
             Tool(query_timeseries),
             Tool(get_forecast),
             Tool(query_markets),
@@ -115,6 +117,21 @@ class Agent:
                 f"queries to this hub unless the user explicitly asks otherwise."
             )
 
+        @self.agent.system_prompt
+        def inject_focused_device(ctx: RunContext[AgentDeps]) -> str:
+            """HMI's context.focusedDeviceId — per-turn, so this must read
+            ctx.deps (set fresh each turn), not close over a constructor-time
+            value like inject_market_context does.
+            """
+            device_id = ctx.deps.focused_device_id
+            if not device_id:
+                return ""
+            return (
+                f"The operator is currently viewing device `{device_id}`. "
+                f'Assume unqualified "the battery" / "this device" refers '
+                f"to it."
+            )
+
     def chat(self, prompt: str) -> str:
         """Process a chat prompt and return prose (sync entry).
 
@@ -143,6 +160,7 @@ class Agent:
         prompt: str,
         *,
         message_history: list[ModelMessage] | None = None,
+        focused_device_id: str | None = None,
     ) -> ChatTurnResult:
         """One agent turn — drains `chat_turn_stream` fully for its result.
 
@@ -154,7 +172,9 @@ class Agent:
         """
         result: ChatTurnResult | None = None
         async for name, payload in self.chat_turn_stream(
-            prompt, message_history=message_history
+            prompt,
+            message_history=message_history,
+            focused_device_id=focused_device_id,
         ):
             if name == "result":
                 assert isinstance(payload, ChatTurnResult)
@@ -168,17 +188,21 @@ class Agent:
         prompt: str,
         *,
         message_history: list[ModelMessage] | None = None,
+        focused_device_id: str | None = None,
     ) -> AsyncGenerator[tuple[str, object]]:
         """Run a turn as a live event stream — see `turn.run_turn_stream`.
 
         Yields `tool_start` / `tool_end` events live, then a terminal
         `("result", ChatTurnResult)`. The SSE endpoint consumes this
-        directly; `chat_turn` drains it.
+        directly; `chat_turn` drains it. `focused_device_id` comes from
+        the HMI's `context.focusedDeviceId` — the device the operator is
+        currently viewing, injected as a dynamic system prompt.
         """
         deps = AgentDeps(
             memory_service=self.memory_service,
             server=self.server,
             device_api=self.device_api,
+            focused_device_id=focused_device_id,
         )
         return run_turn_stream(self.agent, deps, prompt, message_history)
 

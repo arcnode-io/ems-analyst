@@ -100,8 +100,11 @@ class ConversationService:
         """
         try:
             history = await self.ensure_conversation(req)
+            focused_device_id = req.context.focused_device_id if req.context else None
             turn = await self._agent_instance().chat_turn(
-                req.message, message_history=history
+                req.message,
+                message_history=history,
+                focused_device_id=focused_device_id,
             )
             await self._store_instance().append_messages(
                 req.conversation_id, turn.new_messages
@@ -127,8 +130,11 @@ class ConversationService:
         """
         store = self._store_instance()
         try:
+            focused_device_id = req.context.focused_device_id if req.context else None
             stream = self._agent_instance().chat_turn_stream(
-                req.message, message_history=history
+                req.message,
+                message_history=history,
+                focused_device_id=focused_device_id,
             )
             async for name, payload in stream:
                 if name != "result":
