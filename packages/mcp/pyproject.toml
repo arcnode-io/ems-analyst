@@ -62,6 +62,7 @@ security = ["audit-src", "audit-packages"]
 checks = ["depcheck", "format", "lint", "typecheck", "security"]
 unit = "pytest -vv src/*"
 integration = "pytest -vv tests/*"
+eval-retrieval = "python -m ems_analyst_mcp.eval_retrieval"
 cover = "pytest -vv --cov"
 review = "claude 'run code-reviewer agent against diff for quality and elegance'"
 commit = "bash -c 'uv run poe checks && uv run poe cover && uv run poe review && git add -A && git cz && git push'"
