@@ -25,6 +25,22 @@ from .dto import AnalystChatRequest
 _CHAT_RATE_LIMIT: str = "20/minute"
 
 
+@limiter.limit(_CHAT_RATE_LIMIT)
+async def _check_chat_rate_limit(request: Request) -> None:
+    """Rate-limit gate for POST /analyst/chat — called explicitly, not a route.
+
+    slowapi's decorator assumes it's wrapping a plain function whose own
+    `args` tuple matches its signature positionally. classy_fastapi binds
+    routes as functools.partial(method, self), so `self` occupies args[0]
+    and slowapi's request lookup indexes past the end of `args`
+    (IndexError) if `@limiter.limit` decorates the route method directly.
+    A standalone function keeps that assumption true; it raises
+    RateLimitExceeded internally on breach, which propagates up through
+    the caller exactly as if the decorator sat on the route itself —
+    caught by the same app-level exception handler either way.
+    """
+
+
 class ConversationController(Routable):
     """Routes the /analyst/chat POST through to ConversationService."""
 
@@ -41,14 +57,14 @@ class ConversationController(Routable):
             409: {"description": "siteId changed mid-conversation"},
         },
     )
-    @limiter.limit(_CHAT_RATE_LIMIT)
     async def chat(
         self,
-        request: Request,  # noqa: ARG002  # Reason: slowapi's decorator needs it in-signature, unused in the body
+        request: Request,
         body: AnalystChatRequest,
         accept: Annotated[str, Header()] = "",
     ) -> AnalystMessage | StreamingResponse:
         """Multi-turn analyst chat — JSON, or SSE stream on Accept negotiation."""
+        await _check_chat_rate_limit(request)
         if "text/event-stream" in accept.lower():
             # Validate siteId before the stream opens — once a
             # StreamingResponse starts it has committed HTTP 200, so a

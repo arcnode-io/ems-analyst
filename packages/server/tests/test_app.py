@@ -90,6 +90,6 @@ def test_cors_preflight_rejects_unknown_origin() -> None:
         },
     )
 
-    # Assert — Starlette still answers 200 to the preflight, but omits the
-    # header a browser needs to actually allow the follow-up request
+    # Assert — no allow-origin header, so a browser blocks the follow-up
+    # request regardless of the preflight's own status code
     assert "access-control-allow-origin" not in response.headers
