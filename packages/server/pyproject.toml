@@ -13,6 +13,7 @@ dependencies = [
     "pydantic-ai>=1.106.0,<2",  # PYSEC-2026-3693; 2.x is a separate migration
     "pydantic-settings>=2.6.0",
     "pyyaml>=6.0.2",
+    "slowapi>=0.1.9",
     "uvicorn>=0.34.0",
 ]
 

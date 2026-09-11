@@ -9,13 +9,20 @@ from typing import Annotated
 
 from classy_fastapi import Routable, post
 from ems_analyst_agent.schemas import AnalystMessage
-from fastapi import Header, HTTPException
+from fastapi import Header, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic_ai.messages import ModelMessage
 
+from ..rate_limit import limiter
 from .conversation_service import ConversationService
 from .conversation_store import SiteIdMismatchError
 from .dto import AnalystChatRequest
+
+# LLM-backed — each call is a real gemma4:26b turn (tool calls + tokens),
+# the actual cost/abuse surface on an unauthenticated endpoint. Generous
+# for real interactive use (nobody chats faster than this), tight enough
+# to cap a runaway script.
+_CHAT_RATE_LIMIT: str = "20/minute"
 
 
 class ConversationController(Routable):
@@ -34,8 +41,10 @@ class ConversationController(Routable):
             409: {"description": "siteId changed mid-conversation"},
         },
     )
+    @limiter.limit(_CHAT_RATE_LIMIT)
     async def chat(
         self,
+        request: Request,  # noqa: ARG002  # Reason: slowapi's decorator needs it in-signature, unused in the body
         body: AnalystChatRequest,
         accept: Annotated[str, Header()] = "",
     ) -> AnalystMessage | StreamingResponse:
