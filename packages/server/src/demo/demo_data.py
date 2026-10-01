@@ -28,12 +28,14 @@ _PKG_DATA: Final[str] = "ems_analyst_agent.demo_data"
 _CSV_NAME: Final[str] = "measurements.csv"
 
 
-def _agg(values: list[float | str], how: Aggregation) -> float | str:
+def _agg(values: list[float | str | bool], how: Aggregation) -> float | str | bool:
     """Aggregate a bucket's values per the requested function.
 
-    Categorical (str) values ignore the aggregation function — mean/max/min
-    are meaningless for an enum like status — and always return the latest
-    reading.
+    Categorical (str/bool) values ignore the aggregation function —
+    mean/max/min are meaningless for an enum or a boolean — and always
+    return the latest reading. `bool` isn't `float`, so this already
+    falls through to the categorical branch correctly; the signature
+    just needed to say so.
     """
     numeric = [v for v in values if isinstance(v, float)]
     if len(numeric) != len(values):
@@ -117,7 +119,7 @@ class DemoData:
         aggregation: Aggregation = "mean",
     ) -> MeasurementSeries:
         """Hourly-bucketed gap-filled series — mirrors MeasurementsService."""
-        buckets: dict[datetime, list[float | str]] = {}
+        buckets: dict[datetime, list[float | str | bool]] = {}
         unit = ""
         for row in self._rows:
             if (
@@ -129,7 +131,7 @@ class DemoData:
                 continue
             unit = row.unit
             bucket = row.ts.replace(minute=0, second=0, microsecond=0)
-            parsed: float | str = json.loads(row.value)
+            parsed: float | str | bool = json.loads(row.value)
             buckets.setdefault(bucket, []).append(parsed)
         points: list[MeasurementPoint] = []
         cursor = start.replace(minute=0, second=0, microsecond=0)

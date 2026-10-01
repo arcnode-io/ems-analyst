@@ -6,6 +6,7 @@ yields a row for every hour in the window even when no measurements
 landed there (chart renderers render the gap as a break in the line).
 """
 
+import json
 import logging
 import os
 from datetime import datetime
@@ -20,12 +21,47 @@ _TIMESERIES_URL_ENV: str = "TIMESERIES_URL"
 
 # Reason: aggregation is constrained to a whitelist below; the f-string
 # substitution is safe. Bandit and ruff can't see that.
-_AGG_SQL: dict[Aggregation, str] = {
-    "mean": "AVG((value::text)::float)",
-    "max": "MAX((value::text)::float)",
-    "min": "MIN((value::text)::float)",
-    "last": "(ARRAY_AGG((value::text)::float ORDER BY ts DESC))[1]",
+#
+# `value` is JSONB — gateway measurements are number, boolean or enum
+# label (string). Postgres evaluates every aggregate in the SELECT list
+# over the whole group regardless of which branch an outer CASE ends up
+# picking (a CASE around the aggregate call does NOT skip evaluating
+# it) — so each cast is guarded per-row here, not at the aggregate
+# level; a non-numeric row contributes NULL, which AVG/MAX/MIN/ARRAY_AGG
+# all handle natively. The outer CASE in `get()`'s SQL then picks
+# between this (whole bucket numeric) and the latest-raw-value fallback,
+# same "mean/max/min are meaningless for an enum" rule DemoData._agg
+# already uses for the CSV-backed demo mock.
+_NUMERIC_AGG_SQL: dict[Aggregation, str] = {
+    "mean": "AVG(CASE WHEN jsonb_typeof(value) = 'number' THEN (value::text)::float END)",
+    "max": "MAX(CASE WHEN jsonb_typeof(value) = 'number' THEN (value::text)::float END)",
+    "min": "MIN(CASE WHEN jsonb_typeof(value) = 'number' THEN (value::text)::float END)",
+    "last": (
+        "(ARRAY_AGG(CASE WHEN jsonb_typeof(value) = 'number' "
+        "THEN (value::text)::float END ORDER BY ts DESC))[1]"
+    ),
 }
+
+
+def _decode_jsonb_scalar(raw: str | None) -> float | str | bool | None:
+    """Decode asyncpg's JSON-encoded-text jsonb scalar into its real type.
+
+    No jsonb codec is registered on the connection, so asyncpg hands back
+    the raw JSON text (e.g. '"SW_POWER_CAP"', 'true', '42.5') rather than
+    a parsed value — `json.loads` does the rest. Order matters: `bool` is
+    a subclass of `int` in Python, so it must be checked before the
+    int/float branch.
+    """
+    if raw is None:
+        return None
+    decoded = json.loads(raw)
+    if decoded is None:
+        return None
+    if isinstance(decoded, bool):
+        return decoded
+    if isinstance(decoded, int | float):
+        return float(decoded)
+    return str(decoded)
 
 
 class MeasurementsService:
@@ -51,7 +87,7 @@ class MeasurementsService:
         latest matching row (falls back to "" when window is empty).
         """
         url = self._postgres_url or os.environ[_TIMESERIES_URL_ENV]
-        agg_sql = _AGG_SQL[aggregation]
+        numeric_agg_sql = _NUMERIC_AGG_SQL[aggregation]
         sql = f"""
             WITH buckets AS (
                 SELECT generate_series(
@@ -62,7 +98,10 @@ class MeasurementsService:
             ),
             agg AS (
                 SELECT date_trunc('hour', ts) AS bucket,
-                       {agg_sql} AS y,
+                       CASE WHEN bool_and(jsonb_typeof(value) = 'number')
+                            THEN to_jsonb({numeric_agg_sql})
+                            ELSE (ARRAY_AGG(value ORDER BY ts DESC))[1]
+                       END AS y,
                        (ARRAY_AGG(unit ORDER BY ts DESC))[1] AS unit
                 FROM measurements
                 WHERE site_id = $3
@@ -86,9 +125,7 @@ class MeasurementsService:
                 unit = str(r["unit"])
                 break
         points = [
-            MeasurementPoint(
-                ts=r["ts"], value=None if r["y"] is None else float(r["y"])
-            )
+            MeasurementPoint(ts=r["ts"], value=_decode_jsonb_scalar(r["y"]))
             for r in rows
         ]
         return MeasurementSeries(

@@ -63,7 +63,7 @@ async def _insert_measurement(
     device_id: str,
     measurement: str,
     unit: str,
-    value: float,
+    value: float | str | bool,
 ) -> None:
     conn = await asyncpg.connect(postgres_url)
     try:
@@ -143,3 +143,165 @@ class TestMeasurementsService:
         # Assert — every bucket present, every value None
         assert len(actual.points) >= 3
         assert all(p.value is None for p in actual.points)
+
+    @pytest.mark.asyncio
+    async def test_get_decodes_enum_string_value(
+        self, postgres_url: str, measurements_service: MeasurementsService
+    ) -> None:
+        """A gateway-published enum label must come back as a real str.
+
+        value JSONB column stores '"SW_POWER_CAP"' — the old
+        `(value::text)::float` cast hard-crashes on this; it must decode
+        to the Python str, not raise.
+        """
+        # Arrange
+        await _seed_measurements_table(postgres_url)
+        bucket_ts = datetime.now(UTC).replace(minute=20, second=0, microsecond=0)
+        await _insert_measurement(
+            postgres_url,
+            ts=bucket_ts,
+            site_id="site-B",
+            device_id="gpu-1",
+            measurement="throttle_reason",
+            unit="",
+            value="SW_POWER_CAP",
+        )
+
+        # Act
+        actual = await measurements_service.get(
+            site_id="site-B",
+            device_id="gpu-1",
+            measurement="throttle_reason",
+            start=bucket_ts.replace(minute=0),
+            end=bucket_ts.replace(minute=0) + timedelta(hours=1),
+            aggregation="last",
+        )
+
+        # Assert
+        matching = [p for p in actual.points if p.value is not None]
+        assert len(matching) == 1
+        assert matching[0].value == "SW_POWER_CAP"
+
+    @pytest.mark.asyncio
+    async def test_get_decodes_boolean_value(
+        self, postgres_url: str, measurements_service: MeasurementsService
+    ) -> None:
+        """A gateway-published boolean must come back as a real Python bool."""
+        # Arrange
+        await _seed_measurements_table(postgres_url)
+        bucket_ts = datetime.now(UTC).replace(minute=25, second=0, microsecond=0)
+        await _insert_measurement(
+            postgres_url,
+            ts=bucket_ts,
+            site_id="site-B",
+            device_id="relay-1",
+            measurement="breaker_closed",
+            unit="",
+            value=True,
+        )
+
+        # Act
+        actual = await measurements_service.get(
+            site_id="site-B",
+            device_id="relay-1",
+            measurement="breaker_closed",
+            start=bucket_ts.replace(minute=0),
+            end=bucket_ts.replace(minute=0) + timedelta(hours=1),
+            aggregation="last",
+        )
+
+        # Assert
+        matching = [p for p in actual.points if p.value is not None]
+        assert len(matching) == 1
+        assert matching[0].value is True
+
+    @pytest.mark.asyncio
+    async def test_get_mean_still_works_for_pure_numeric_bucket(
+        self, postgres_url: str, measurements_service: MeasurementsService
+    ) -> None:
+        """Regression guard: numeric aggregation must survive the jsonb_typeof branch."""
+        # Arrange — two numeric samples in the same hour bucket
+        await _seed_measurements_table(postgres_url)
+        bucket_ts = datetime.now(UTC).replace(minute=30, second=0, microsecond=0)
+        await _insert_measurement(
+            postgres_url,
+            ts=bucket_ts,
+            site_id="site-C",
+            device_id="device-2",
+            measurement="power_kw",
+            unit="kw",
+            value=10.0,
+        )
+        await _insert_measurement(
+            postgres_url,
+            ts=bucket_ts.replace(minute=45),
+            site_id="site-C",
+            device_id="device-2",
+            measurement="power_kw",
+            unit="kw",
+            value=20.0,
+        )
+
+        # Act
+        actual = await measurements_service.get(
+            site_id="site-C",
+            device_id="device-2",
+            measurement="power_kw",
+            start=bucket_ts.replace(minute=0),
+            end=bucket_ts.replace(minute=0) + timedelta(hours=1),
+            aggregation="mean",
+        )
+
+        # Assert
+        matching = [p for p in actual.points if p.value is not None]
+        assert len(matching) == 1
+        assert matching[0].value == 15.0
+
+    @pytest.mark.asyncio
+    async def test_get_mixed_bucket_falls_back_to_latest_raw_value(
+        self, postgres_url: str, measurements_service: MeasurementsService
+    ) -> None:
+        """A bucket mixing numeric + non-numeric values ignores the agg fn.
+
+        Mirrors DemoData._agg's existing semantics: mean/max/min are
+        meaningless once any reading in the bucket isn't a number, so the
+        bucket falls back to its latest raw value regardless of the
+        requested aggregation — never a crash, never a silently-wrong
+        partial average.
+        """
+        # Arrange — a numeric sample followed by a categorical one, same hour
+        await _seed_measurements_table(postgres_url)
+        bucket_ts = datetime.now(UTC).replace(minute=10, second=0, microsecond=0)
+        await _insert_measurement(
+            postgres_url,
+            ts=bucket_ts,
+            site_id="site-D",
+            device_id="device-3",
+            measurement="mixed_measurement",
+            unit="",
+            value=5.0,
+        )
+        await _insert_measurement(
+            postgres_url,
+            ts=bucket_ts.replace(minute=40),
+            site_id="site-D",
+            device_id="device-3",
+            measurement="mixed_measurement",
+            unit="",
+            value="NA",
+        )
+
+        # Act
+        actual = await measurements_service.get(
+            site_id="site-D",
+            device_id="device-3",
+            measurement="mixed_measurement",
+            start=bucket_ts.replace(minute=0),
+            end=bucket_ts.replace(minute=0) + timedelta(hours=1),
+            aggregation="mean",
+        )
+
+        # Assert — latest raw value ("NA"), not a crash and not a numeric mean
+        matching = [p for p in actual.points if p.value is not None]
+        assert len(matching) == 1
+        assert matching[0].value == "NA"
