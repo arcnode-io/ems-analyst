@@ -339,7 +339,7 @@ None.
 | 🏭 ics-engineer | ems-industrial-gateway, ems-industrial-fixtures |
 | 🤖 ai-engineer | ems-analyst | seed
 | 📊 ml-engineer | ems-analyst-model |
-| 🛰️ embedded-engineer | dlr-rtu-firmware, dlr-tap-regulator-sim |
+| 🛰️ embedded-engineer | dlr-rtu-firmware, dlr-line-loading-sim |
 | 📟 electronics-engineer | dlr-rtu-pcb |
 | 🧔 devops-engineer | ~/engineering-with-ai/tooling-playbooks |
 
