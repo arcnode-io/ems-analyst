@@ -1,8 +1,8 @@
 """asyncpg-backed read of the canonical `measurements` table.
 
-Hourly-bucketed, gap-filled timeseries — same shape the agent's old
+Bucketed, gap-filled timeseries — same shape the agent's old
 TimeseriesClient.query_hourly returned. `generate_series` + LEFT JOIN
-yields a row for every hour in the window even when no measurements
+yields a row for every bucket in the window even when no measurements
 landed there (chart renderers render the gap as a break in the line).
 """
 
@@ -64,8 +64,11 @@ def _decode_jsonb_scalar(raw: str | None) -> float | str | bool | None:
     return str(decoded)
 
 
+_DEFAULT_BUCKET_S: int = 3600
+
+
 class MeasurementsService:
-    """Hourly-bucketed reads from the canonical measurements table."""
+    """Bucketed reads from the canonical measurements table."""
 
     def __init__(self, postgres_url: str | None = None) -> None:
         """Optional URL override for tests; production reads env per-request."""
@@ -79,10 +82,16 @@ class MeasurementsService:
         start: datetime,
         end: datetime,
         aggregation: Aggregation = "mean",
+        bucket_s: int = _DEFAULT_BUCKET_S,
     ) -> MeasurementSeries:
-        """Return hourly-bucketed gap-filled series in [start, end].
+        """Return bucketed gap-filled series in [start, end].
 
-        Empty windows still get a row per hour with value=None so
+        `bucket_s` (default 3600, i.e. hourly — unchanged behavior) sizes
+        the bucket via `date_bin`, anchored to the Unix epoch so bucket
+        boundaries land exactly where `date_trunc('hour', ...)` used to
+        for the default width — confirmed empirically, not assumed.
+
+        Empty windows still get a row per bucket with value=None so
         downstream chart renderers see the gap. Unit comes from the
         latest matching row (falls back to "" when window is empty).
         """
@@ -91,13 +100,13 @@ class MeasurementsService:
         sql = f"""
             WITH buckets AS (
                 SELECT generate_series(
-                    date_trunc('hour', $1::timestamptz),
-                    date_trunc('hour', $2::timestamptz),
-                    interval '1 hour'
+                    date_bin(make_interval(secs => $6::int), $1::timestamptz, TIMESTAMPTZ 'epoch'),
+                    date_bin(make_interval(secs => $6::int), $2::timestamptz, TIMESTAMPTZ 'epoch'),
+                    make_interval(secs => $6::int)
                 ) AS ts
             ),
             agg AS (
-                SELECT date_trunc('hour', ts) AS bucket,
+                SELECT date_bin(make_interval(secs => $6::int), ts, TIMESTAMPTZ 'epoch') AS bucket,
                        CASE WHEN bool_and(jsonb_typeof(value) = 'number')
                             THEN to_jsonb({numeric_agg_sql})
                             ELSE (ARRAY_AGG(value ORDER BY ts DESC))[1]
@@ -117,7 +126,9 @@ class MeasurementsService:
             ORDER BY b.ts
         """  # noqa: S608  # nosec B608
         async with connect(url) as conn:
-            rows = await conn.fetch(sql, start, end, site_id, device_id, measurement)
+            rows = await conn.fetch(
+                sql, start, end, site_id, device_id, measurement, bucket_s
+            )
         # Find unit from first non-null bucket (gap-filled rows have unit=None).
         unit = ""
         for r in rows:

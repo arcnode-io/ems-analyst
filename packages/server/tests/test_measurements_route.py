@@ -32,6 +32,7 @@ class _FakeMeasurementsService:
         start: datetime,
         end: datetime,
         aggregation: Aggregation = "mean",
+        bucket_s: int = 3600,
     ) -> MeasurementSeries:
         self.calls.append(
             {
@@ -41,6 +42,7 @@ class _FakeMeasurementsService:
                 "start": start,
                 "end": end,
                 "aggregation": aggregation,
+                "bucket_s": bucket_s,
             }
         )
         return MeasurementSeries(
@@ -138,3 +140,66 @@ class TestMeasurementsRoute:
 
         # Assert
         assert fake.calls[0]["aggregation"] == "last"
+
+    def test_analyst_prefixed_path_works(
+        self, client: tuple[TestClient, _FakeMeasurementsService]
+    ) -> None:
+        """The HMI's nginx only proxies /analyst/*, so this path must exist."""
+        # Arrange
+        c, fake = client
+
+        # Act
+        response = c.get(
+            "/analyst/measurements",
+            params={
+                "device_id": "meter_01",
+                "measurement": "active_power",
+                "start": "2026-05-17T00:00:00Z",
+                "end": "2026-05-18T00:00:00Z",
+            },
+        )
+
+        # Assert — same behavior as the bare /measurements alias
+        assert response.status_code == 200
+        assert fake.calls[0]["device_id"] == "meter_01"
+
+    def test_bucket_s_defaults_to_3600(
+        self, client: tuple[TestClient, _FakeMeasurementsService]
+    ) -> None:
+        # Arrange
+        c, fake = client
+
+        # Act — no bucket_s param
+        c.get(
+            "/analyst/measurements",
+            params={
+                "device_id": "device-4",
+                "measurement": "power_kw",
+                "start": "2026-05-17T00:00:00Z",
+                "end": "2026-05-18T00:00:00Z",
+            },
+        )
+
+        # Assert — unchanged default behavior
+        assert fake.calls[0]["bucket_s"] == 3600
+
+    def test_bucket_s_forwards_explicit_value(
+        self, client: tuple[TestClient, _FakeMeasurementsService]
+    ) -> None:
+        # Arrange
+        c, fake = client
+
+        # Act — 10-second buckets, as the HMI's power-balance chart needs
+        c.get(
+            "/analyst/measurements",
+            params={
+                "device_id": "device-5",
+                "measurement": "active_power",
+                "start": "2026-05-17T00:00:00Z",
+                "end": "2026-05-18T00:00:00Z",
+                "bucket_s": 10,
+            },
+        )
+
+        # Assert
+        assert fake.calls[0]["bucket_s"] == 10

@@ -26,6 +26,19 @@ log = logging.getLogger(__name__)
 
 _PKG_DATA: Final[str] = "ems_analyst_agent.demo_data"
 _CSV_NAME: Final[str] = "measurements.csv"
+_EPOCH: Final[datetime] = datetime(1970, 1, 1, tzinfo=UTC)
+
+
+def _bucket_floor(ts: datetime, bucket_s: int) -> datetime:
+    """Epoch-anchored bucket floor — Python mirror of Postgres `date_bin`.
+
+    Matches MeasurementsService's `date_bin(interval, ts, TIMESTAMPTZ
+    'epoch')` exactly, so both backends bucket identically for the same
+    bucket_s. bucket_s=3600 lands on clock-hour boundaries, same as the
+    old `replace(minute=0, second=0, microsecond=0)`.
+    """
+    elapsed = (ts - _EPOCH).total_seconds()
+    return _EPOCH + timedelta(seconds=elapsed - (elapsed % bucket_s))
 
 
 def _agg(values: list[float | str | bool], how: Aggregation) -> float | str | bool:
@@ -117,8 +130,14 @@ class DemoData:
         start: datetime,
         end: datetime,
         aggregation: Aggregation = "mean",
+        bucket_s: int = 3600,
     ) -> MeasurementSeries:
-        """Hourly-bucketed gap-filled series — mirrors MeasurementsService."""
+        """Bucketed gap-filled series — mirrors MeasurementsService.
+
+        Buckets are epoch-anchored (`_bucket_floor`), same as the real
+        service's `date_bin(..., TIMESTAMPTZ 'epoch')` — bucket_s=3600
+        (the default) reproduces the old hourly behavior exactly.
+        """
         buckets: dict[datetime, list[float | str | bool]] = {}
         unit = ""
         for row in self._rows:
@@ -130,13 +149,14 @@ class DemoData:
             ):
                 continue
             unit = row.unit
-            bucket = row.ts.replace(minute=0, second=0, microsecond=0)
+            bucket = _bucket_floor(row.ts, bucket_s)
             parsed: float | str | bool = json.loads(row.value)
             buckets.setdefault(bucket, []).append(parsed)
         points: list[MeasurementPoint] = []
-        cursor = start.replace(minute=0, second=0, microsecond=0)
-        end_hour = end.replace(minute=0, second=0, microsecond=0)
-        while cursor <= end_hour:
+        cursor = _bucket_floor(start, bucket_s)
+        end_bucket = _bucket_floor(end, bucket_s)
+        stride = timedelta(seconds=bucket_s)
+        while cursor <= end_bucket:
             vals = buckets.get(cursor)
             points.append(
                 MeasurementPoint(
@@ -144,7 +164,7 @@ class DemoData:
                     value=_agg(vals, aggregation) if vals else None,
                 )
             )
-            cursor += timedelta(hours=1)
+            cursor += stride
         return MeasurementSeries(
             site_id=site_id,
             device_id=device_id,

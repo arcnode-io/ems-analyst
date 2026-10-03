@@ -305,3 +305,85 @@ class TestMeasurementsService:
         matching = [p for p in actual.points if p.value is not None]
         assert len(matching) == 1
         assert matching[0].value == "NA"
+
+    @pytest.mark.asyncio
+    async def test_get_bucket_s_defaults_to_hourly_unchanged(
+        self, postgres_url: str, measurements_service: MeasurementsService
+    ) -> None:
+        """Regression guard: omitting bucket_s must behave exactly as before."""
+        # Arrange
+        await _seed_measurements_table(postgres_url)
+        bucket_ts = datetime.now(UTC).replace(minute=12, second=0, microsecond=0)
+        await _insert_measurement(
+            postgres_url,
+            ts=bucket_ts,
+            site_id="site-E",
+            device_id="device-4",
+            measurement="power_kw",
+            unit="kw",
+            value=7.0,
+        )
+
+        # Act — no bucket_s passed
+        actual = await measurements_service.get(
+            site_id="site-E",
+            device_id="device-4",
+            measurement="power_kw",
+            start=bucket_ts.replace(minute=0),
+            end=bucket_ts.replace(minute=0) + timedelta(hours=1),
+            aggregation="mean",
+        )
+
+        # Assert — hour-wide bucket boundaries, matching old date_trunc('hour', ...)
+        # (generate_series is inclusive at both ends, so a 1h window yields 2
+        # buckets: the seeded hour and the next boundary, gap-filled None)
+        assert actual.points[0].ts == bucket_ts.replace(minute=0)
+        assert actual.points[0].value == 7.0
+        assert all(p.value is None for p in actual.points[1:])
+
+    @pytest.mark.asyncio
+    async def test_get_fine_bucket_s_separates_samples_within_the_hour(
+        self, postgres_url: str, measurements_service: MeasurementsService
+    ) -> None:
+        """bucket_s=10 gives the HMI's power-balance chart minute-ish resolution.
+
+        Two samples 20s apart, in the same hour, must land in two different
+        10-second buckets rather than both collapsing into one hourly bucket.
+        """
+        # Arrange
+        await _seed_measurements_table(postgres_url)
+        base_ts = datetime.now(UTC).replace(minute=5, second=0, microsecond=0)
+        await _insert_measurement(
+            postgres_url,
+            ts=base_ts,
+            site_id="site-F",
+            device_id="meter_01",
+            measurement="active_power",
+            unit="kw",
+            value=100.0,
+        )
+        await _insert_measurement(
+            postgres_url,
+            ts=base_ts + timedelta(seconds=20),
+            site_id="site-F",
+            device_id="meter_01",
+            measurement="active_power",
+            unit="kw",
+            value=200.0,
+        )
+
+        # Act
+        actual = await measurements_service.get(
+            site_id="site-F",
+            device_id="meter_01",
+            measurement="active_power",
+            start=base_ts,
+            end=base_ts + timedelta(seconds=30),
+            aggregation="mean",
+            bucket_s=10,
+        )
+
+        # Assert — 4 buckets of 10s spanning [base_ts, base_ts+30s]; the two
+        # samples land in different buckets, each reported individually
+        values = {p.ts: p.value for p in actual.points if p.value is not None}
+        assert values == {base_ts: 100.0, base_ts + timedelta(seconds=20): 200.0}
