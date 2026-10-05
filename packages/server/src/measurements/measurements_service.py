@@ -13,7 +13,7 @@ from datetime import datetime
 
 from src.db import connect
 
-from .dto import Aggregation, MeasurementPoint, MeasurementSeries
+from .dto import Aggregation, LatestValue, MeasurementPoint, MeasurementSeries
 
 log = logging.getLogger(__name__)
 
@@ -146,3 +146,44 @@ class MeasurementsService:
             unit=unit,
             points=points,
         )
+
+    async def get_latest(
+        self,
+        site_id: str,
+        device_ids: list[str],
+        measurements: list[str],
+    ) -> list[LatestValue]:
+        """Latest value for every requested (device_id, measurement) pair.
+
+        One query regardless of how many pairs are asked for — `DISTINCT
+        ON` picks the newest row per pair directly in Postgres. Exists so
+        a rollup across many devices (e.g. device-status over a whole
+        site) costs one round trip, not one per device: at real-fleet
+        scale (hundreds of devices), N+1 isn't viable for an interactive
+        chat response.
+
+        A requested pair with zero matching rows is simply absent from
+        the result — there's no bucketed-gap concept for a point-in-time
+        lookup the way there is for `get()`.
+        """
+        url = self._postgres_url or os.environ[_TIMESERIES_URL_ENV]
+        sql = """
+            SELECT DISTINCT ON (device_id, measurement)
+                   device_id, measurement, ts, value
+            FROM measurements
+            WHERE site_id = $1
+              AND device_id = ANY($2::text[])
+              AND measurement = ANY($3::text[])
+            ORDER BY device_id, measurement, ts DESC
+        """
+        async with connect(url) as conn:
+            rows = await conn.fetch(sql, site_id, device_ids, measurements)
+        return [
+            LatestValue(
+                device_id=str(r["device_id"]),
+                measurement=str(r["measurement"]),
+                ts=r["ts"],
+                value=_decode_jsonb_scalar(r["value"]),
+            )
+            for r in rows
+        ]

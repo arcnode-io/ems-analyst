@@ -20,7 +20,12 @@ from importlib import resources
 from typing import Final
 
 from src.description.dto import MeasurementPair, SiteDescription
-from src.measurements.dto import Aggregation, MeasurementPoint, MeasurementSeries
+from src.measurements.dto import (
+    Aggregation,
+    LatestValue,
+    MeasurementPoint,
+    MeasurementSeries,
+)
 
 log = logging.getLogger(__name__)
 
@@ -172,6 +177,37 @@ class DemoData:
             unit=unit,
             points=points,
         )
+
+    async def get_latest(
+        self,
+        site_id: str,
+        device_ids: list[str],
+        measurements: list[str],
+    ) -> list[LatestValue]:
+        """Latest value per requested (device_id, measurement) pair — mirrors MeasurementsService."""
+        latest: dict[tuple[str, str], _Row] = {}
+        device_set = set(device_ids)
+        measurement_set = set(measurements)
+        for row in self._rows:
+            if (
+                row.site_id != site_id
+                or row.device_id not in device_set
+                or row.measurement not in measurement_set
+            ):
+                continue
+            key = (row.device_id, row.measurement)
+            current = latest.get(key)
+            if current is None or row.ts > current.ts:
+                latest[key] = row
+        return [
+            LatestValue(
+                device_id=row.device_id,
+                measurement=row.measurement,
+                ts=row.ts,
+                value=json.loads(row.value),
+            )
+            for row in latest.values()
+        ]
 
     async def describe(self, site_id: str) -> SiteDescription:
         """(device, measurement, sample-count) inventory — mirrors DescriptionService."""

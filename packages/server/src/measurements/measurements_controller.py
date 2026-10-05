@@ -11,10 +11,12 @@ directly, in-process, with no nginx in between.
 """
 
 from datetime import datetime
+from typing import Annotated
 
 from classy_fastapi import Routable, get
+from fastapi import Query
 
-from .dto import Aggregation, MeasurementSeries
+from .dto import Aggregation, LatestValuesResponse, MeasurementSeries
 from .measurements_service import MeasurementsService
 
 
@@ -85,3 +87,44 @@ class MeasurementsController(Routable):
             aggregation=aggregation,
             bucket_s=bucket_s,
         )
+
+    @get(
+        "/analyst/measurements/latest",
+        response_model=LatestValuesResponse,
+        tags=["Measurements"],
+        responses={200: {"description": "Latest value per requested pair"}},
+    )
+    async def list_latest(
+        self,
+        device_ids: Annotated[list[str], Query()],
+        measurements: Annotated[list[str], Query()],
+    ) -> LatestValuesResponse:
+        """Bulk latest-value lookup — one call for many (device, measurement) pairs.
+
+        For a rollup over many devices (e.g. device-status across a whole
+        fleet) rather than one query per device.
+        """
+        return await self._get_latest(device_ids, measurements)
+
+    @get(
+        "/measurements/latest",
+        response_model=LatestValuesResponse,
+        tags=["Measurements"],
+        responses={200: {"description": "Latest value per requested pair"}},
+        include_in_schema=False,
+    )
+    async def list_latest_unprefixed(
+        self,
+        device_ids: Annotated[list[str], Query()],
+        measurements: Annotated[list[str], Query()],
+    ) -> LatestValuesResponse:
+        """Alias of /analyst/measurements/latest — the agent calls this directly."""
+        return await self._get_latest(device_ids, measurements)
+
+    async def _get_latest(
+        self, device_ids: list[str], measurements: list[str]
+    ) -> LatestValuesResponse:
+        values = await self.service.get_latest(
+            site_id=self.site_id, device_ids=device_ids, measurements=measurements
+        )
+        return LatestValuesResponse(site_id=self.site_id, values=values)

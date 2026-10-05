@@ -81,6 +81,37 @@ class TestDemoDataMeasurements:
         assert values == ["alarm"]
 
 
+class TestDemoDataGetLatest:
+    @pytest.mark.asyncio
+    async def test_get_latest_returns_most_recent_per_pair(
+        self, demo: DemoData
+    ) -> None:
+        # Act
+        actual = await demo.get_latest(
+            site_id=_SITE,
+            device_ids=["cdu_01", "bess_module_01"],
+            measurements=["status", "active_power"],
+        )
+
+        # Assert — only pairs that actually exist in the CSV come back
+        pairs = {(v.device_id, v.measurement): v.value for v in actual}
+        assert pairs[("cdu_01", "status")] == "alarm"
+        assert ("bess_module_01", "active_power") in pairs
+        assert ("cdu_01", "active_power") not in pairs
+
+    @pytest.mark.asyncio
+    async def test_get_latest_unknown_pair_omitted(self, demo: DemoData) -> None:
+        # Act
+        actual = await demo.get_latest(
+            site_id=_SITE,
+            device_ids=["no-such-device"],
+            measurements=["no-such-measurement"],
+        )
+
+        # Assert
+        assert actual == []
+
+
 class TestDemoDataDescribe:
     @pytest.mark.asyncio
     async def test_describe_includes_market_price_series(self, demo: DemoData) -> None:

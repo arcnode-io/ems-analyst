@@ -12,9 +12,10 @@ from ..device_api import DeviceApiClient
 from ..schemas import TableSpec
 from ..server_client import ServerClient
 from ._common import Render, _TelemetryDeps, _parse_window, _to_table
+from .device_status import build_device_status
 from .dispatch_explain_artifact import build_explain_dispatch
 from .site_analytics import build_energy_breakdown, build_markets
-from .telemetry import build_device_status, build_site_description, build_timeseries
+from .telemetry import build_site_description, build_timeseries
 
 
 async def query_timeseries(

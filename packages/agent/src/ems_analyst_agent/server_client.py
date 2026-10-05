@@ -48,6 +48,22 @@ class MeasurementSeries(BaseModel):
     points: list[MeasurementPoint]
 
 
+class LatestValue(BaseModel):
+    """One (device, measurement) pair's most recent reading."""
+
+    device_id: str
+    measurement: str
+    ts: datetime
+    value: float | str | bool | None
+
+
+class LatestValuesResponse(BaseModel):
+    """Bulk latest-value lookup — one row per requested pair that has data."""
+
+    site_id: str
+    values: list[LatestValue]
+
+
 class MeasurementPair(BaseModel):
     """One (device, measurement) pair + sample count at the site."""
 
@@ -114,6 +130,23 @@ class ServerClient:
             )
             resp.raise_for_status()
         return MeasurementSeries.model_validate(resp.json())
+
+    async def get_latest_measurements(
+        self, device_ids: list[str], measurements: list[str]
+    ) -> LatestValuesResponse:
+        """GET /measurements/latest — bulk latest-value lookup.
+
+        One call for many (device, measurement) pairs — for a rollup
+        across many devices, a loop of get_measurements() calls doesn't
+        scale to a real device fleet.
+        """
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as c:
+            resp = await c.get(
+                f"{self.base_url}/measurements/latest",
+                params={"device_ids": device_ids, "measurements": measurements},
+            )
+            resp.raise_for_status()
+        return LatestValuesResponse.model_validate(resp.json())
 
     async def describe_site(self) -> SiteDescription:
         """GET /description — inventory of queryable (device, measurement) pairs."""

@@ -11,7 +11,12 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.measurements.dto import Aggregation, MeasurementPoint, MeasurementSeries
+from src.measurements.dto import (
+    Aggregation,
+    LatestValue,
+    MeasurementPoint,
+    MeasurementSeries,
+)
 from src.measurements.measurements_controller import MeasurementsController
 from src.measurements.measurements_service import MeasurementsService
 
@@ -55,6 +60,28 @@ class _FakeMeasurementsService:
                 MeasurementPoint(ts=datetime(2026, 5, 18, 1, tzinfo=UTC), value=None),
             ],
         )
+
+    async def get_latest(
+        self,
+        site_id: str,
+        device_ids: list[str],
+        measurements: list[str],
+    ) -> list[LatestValue]:
+        self.calls.append(
+            {
+                "site_id": site_id,
+                "device_ids": device_ids,
+                "measurements": measurements,
+            }
+        )
+        return [
+            LatestValue(
+                device_id=device_ids[0],
+                measurement=measurements[0],
+                ts=datetime(2026, 5, 18, tzinfo=UTC),
+                value=True,
+            )
+        ]
 
 
 @pytest.fixture
@@ -203,3 +230,48 @@ class TestMeasurementsRoute:
 
         # Assert
         assert fake.calls[0]["bucket_s"] == 10
+
+
+class TestMeasurementsLatestRoute:
+    """AAA — GET /analyst/measurements/latest, the bulk lookup for rollups."""
+
+    def test_returns_latest_values(
+        self, client: tuple[TestClient, _FakeMeasurementsService]
+    ) -> None:
+        # Arrange
+        c, fake = client
+
+        # Act — repeated query params for both list fields
+        response = c.get(
+            "/analyst/measurements/latest",
+            params=[
+                ("device_ids", "relay_1"),
+                ("device_ids", "relay_2"),
+                ("measurements", "trip_status"),
+            ],
+        )
+
+        # Assert
+        assert response.status_code == 200
+        body = response.json()
+        assert body["site_id"] == _DEPLOY_SITE
+        assert body["values"][0]["device_id"] == "relay_1"
+        assert body["values"][0]["value"] is True
+        assert fake.calls[0]["device_ids"] == ["relay_1", "relay_2"]
+        assert fake.calls[0]["measurements"] == ["trip_status"]
+
+    def test_unprefixed_alias_works(
+        self, client: tuple[TestClient, _FakeMeasurementsService]
+    ) -> None:
+        # Arrange
+        c, fake = client
+
+        # Act
+        response = c.get(
+            "/measurements/latest",
+            params=[("device_ids", "cooler_1"), ("measurements", "fault_word")],
+        )
+
+        # Assert
+        assert response.status_code == 200
+        assert fake.calls[0]["device_ids"] == ["cooler_1"]

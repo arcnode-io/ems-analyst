@@ -1,37 +1,17 @@
 """Timeseries + site-inventory artifact builders, backed by ServerClient.
 
 `build_timeseries` charts a historian series; `build_site_description`
-tables the queryable-data inventory. Markets revenue + energy breakdown
-live in `site_analytics.py`; RunContext wrappers in `telemetry_tools.py`.
+tables the queryable-data inventory. Device status lives in
+`device_status.py`; markets revenue + energy breakdown in
+`site_analytics.py`; RunContext wrappers in `telemetry_tools.py`.
 """
 
 from datetime import UTC, datetime, timedelta
 
 from ..isotime import iso_z
-from ..schemas import AnalystArtifact, LineSpec, RowSeverity, TableSpec
+from ..schemas import AnalystArtifact, LineSpec, TableSpec
 from ..server_client import Aggregation, ServerClient
 from ._common import _error_artifact, _fmt_window
-
-# Reason: the demo CSV pins every measurement's freshest sample to the
-# container's load-time "now"; a 712-sample series has slack across any
-# gap before a query, but `status` has exactly 1 sample per device — zero
-# redundancy. 24h left it stale after any same-day gap between deploy and
-# demo. 30d matches the seed's full span so it survives to the next reseed.
-_STATUS_MEASUREMENT: str = "status"
-_STATUS_WINDOW: timedelta = timedelta(days=30)
-
-
-def _severity(state: str) -> RowSeverity | None:
-    """Map a status value to a table row severity, or None if unrecognized."""
-    match state:
-        case "ok":
-            return "ok"
-        case "warn":
-            return "warn"
-        case "alarm":
-            return "alarm"
-        case _:
-            return None
 
 
 async def build_timeseries(
@@ -122,75 +102,3 @@ async def build_site_description(client: ServerClient) -> AnalystArtifact:
     return AnalystArtifact.model_validate(
         {"kind": "table", "spec": spec.model_dump(by_alias=True)}
     )
-
-
-async def build_device_status(client: ServerClient) -> AnalystArtifact:
-    """Current status for every device that publishes one — one table.
-
-    One tool call instead of one query_timeseries('status') per device:
-    describe_site tells us which devices have a status measurement, then
-    each is queried for its latest value and folded into a single table.
-    """
-    desc = await client.describe_site()
-    device_ids = [
-        p.device_id for p in desc.pairs if p.measurement == _STATUS_MEASUREMENT
-    ]
-    if not device_ids:
-        return _error_artifact("not_found", "No status-reporting devices at this site.")
-    end = datetime.now(UTC)
-    start = end - _STATUS_WINDOW
-    rows: list[dict[str, str]] = []
-    severities: list[RowSeverity | None] = []
-    for device_id in device_ids:
-        series = await client.get_measurements(
-            device_id=device_id,
-            measurement=_STATUS_MEASUREMENT,
-            start=start,
-            end=end,
-            aggregation="last",
-        )
-        latest = next(
-            (p.value for p in reversed(series.points) if p.value is not None), None
-        )
-        state = str(latest) if latest is not None else "unknown"
-        rows.append({"device": device_id, "status": state})
-        severities.append(_severity(state))
-    spec = TableSpec.model_validate(
-        {
-            "title": "Device status",
-            "columns": [
-                {"key": "device", "label": "Device"},
-                {"key": "status", "label": "Status"},
-            ],
-            "rows": rows,
-            "rowSeverity": severities,
-            "dataAsOf": iso_z(),
-            "note": _status_note(rows),
-        }
-    )
-    return AnalystArtifact.model_validate(
-        {"kind": "table", "spec": spec.model_dump(by_alias=True)}
-    )
-
-
-def _status_note(rows: list[dict[str, str]]) -> str:
-    """One-line severity summary, naming devices that aren't ok.
-
-    e.g. '1 alarm (cdu_01), 1 warn (bess_module_02), 3 ok' — this is the
-    only thing the LLM reads back (it never sees the table's rows), so
-    non-ok devices need to be named here or it has to go fishing with
-    other tools to find out which device is the problem.
-    """
-    devices_by_status: dict[str, list[str]] = {}
-    for row in rows:
-        devices_by_status.setdefault(row["status"], []).append(row["device"])
-    ordered = [s for s in ("alarm", "warn", "ok") if s in devices_by_status]
-    ordered += [s for s in devices_by_status if s not in ordered]
-    parts = []
-    for status in ordered:
-        devices = devices_by_status[status]
-        if status == "ok":
-            parts.append(f"{len(devices)} {status}")
-        else:
-            parts.append(f"{len(devices)} {status} ({', '.join(devices)})")
-    return ", ".join(parts)

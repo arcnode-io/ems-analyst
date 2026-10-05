@@ -32,3 +32,24 @@ class MeasurementSeries(BaseModel):
     measurement: str
     unit: str
     points: list[MeasurementPoint]
+
+
+class LatestValue(BaseModel):
+    """One (device, measurement) pair's most recent reading."""
+
+    device_id: str
+    measurement: str
+    ts: datetime
+    value: float | str | bool | None
+
+
+class LatestValuesResponse(BaseModel):
+    """Bulk latest-value lookup — one row per requested pair that has data.
+
+    A requested (device_id, measurement) pair with no matching rows in the
+    table is simply absent here — there's no bucketed-gap concept for a
+    point-in-time lookup the way there is for `MeasurementSeries`.
+    """
+
+    site_id: str
+    values: list[LatestValue]

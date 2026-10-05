@@ -387,3 +387,139 @@ class TestMeasurementsService:
         # samples land in different buckets, each reported individually
         values = {p.ts: p.value for p in actual.points if p.value is not None}
         assert values == {base_ts: 100.0, base_ts + timedelta(seconds=20): 200.0}
+
+
+class TestMeasurementsServiceGetLatest:
+    """AAA — bulk latest-value lookup across many (device, measurement) pairs.
+
+    Exists so a rollup over many devices (e.g. device-status across a
+    whole site) costs one query instead of one round trip per device —
+    at real-fleet scale (hundreds of devices) the per-device loop the
+    agent's build_device_status() used isn't viable.
+    """
+
+    @pytest.mark.asyncio
+    async def test_get_latest_returns_most_recent_value_per_pair(
+        self, postgres_url: str, measurements_service: MeasurementsService
+    ) -> None:
+        # Arrange — two readings for the same (device, measurement); only
+        # the later one should come back
+        await _seed_measurements_table(postgres_url)
+        now = datetime.now(UTC).replace(microsecond=0)
+        await _insert_measurement(
+            postgres_url,
+            ts=now - timedelta(minutes=5),
+            site_id="site-G",
+            device_id="relay_1",
+            measurement="trip_status",
+            unit="",
+            value=False,
+        )
+        await _insert_measurement(
+            postgres_url,
+            ts=now,
+            site_id="site-G",
+            device_id="relay_1",
+            measurement="trip_status",
+            unit="",
+            value=True,
+        )
+
+        # Act
+        actual = await measurements_service.get_latest(
+            site_id="site-G",
+            device_ids=["relay_1"],
+            measurements=["trip_status"],
+        )
+
+        # Assert
+        assert len(actual) == 1
+        assert actual[0].device_id == "relay_1"
+        assert actual[0].measurement == "trip_status"
+        assert actual[0].ts == now
+        assert actual[0].value is True
+
+    @pytest.mark.asyncio
+    async def test_get_latest_covers_many_devices_and_measurements_in_one_call(
+        self, postgres_url: str, measurements_service: MeasurementsService
+    ) -> None:
+        # Arrange — 3 devices x 2 measurements = 6 series, one reading each
+        await _seed_measurements_table(postgres_url)
+        now = datetime.now(UTC).replace(microsecond=0)
+        for i in range(1, 4):
+            for meas, val in (("gpu_1_throttle_reason", "NA"), ("fan_speed", 1800.0)):
+                await _insert_measurement(
+                    postgres_url,
+                    ts=now,
+                    site_id="site-H",
+                    device_id=f"gpu_node_{i}",
+                    measurement=meas,
+                    unit="",
+                    value=val,
+                )
+
+        # Act
+        actual = await measurements_service.get_latest(
+            site_id="site-H",
+            device_ids=["gpu_node_1", "gpu_node_2", "gpu_node_3"],
+            measurements=["gpu_1_throttle_reason", "fan_speed"],
+        )
+
+        # Assert — all 6 pairs present, one query
+        pairs = {(v.device_id, v.measurement): v.value for v in actual}
+        assert len(pairs) == 6
+        assert pairs[("gpu_node_2", "gpu_1_throttle_reason")] == "NA"
+        assert pairs[("gpu_node_3", "fan_speed")] == 1800.0
+
+    @pytest.mark.asyncio
+    async def test_get_latest_omits_pairs_with_no_data(
+        self, postgres_url: str, measurements_service: MeasurementsService
+    ) -> None:
+        # Arrange — only one of the two requested pairs has any data
+        await _seed_measurements_table(postgres_url)
+        await _insert_measurement(
+            postgres_url,
+            ts=datetime.now(UTC),
+            site_id="site-I",
+            device_id="cooler_1",
+            measurement="fault_word",
+            unit="",
+            value=0.0,
+        )
+
+        # Act — also ask about a device/measurement with zero rows
+        actual = await measurements_service.get_latest(
+            site_id="site-I",
+            device_ids=["cooler_1", "cooler_2"],
+            measurements=["fault_word"],
+        )
+
+        # Assert — only the pair with real data comes back, no null-filled row
+        assert len(actual) == 1
+        assert actual[0].device_id == "cooler_1"
+
+    @pytest.mark.asyncio
+    async def test_get_latest_scopes_to_requested_site(
+        self, postgres_url: str, measurements_service: MeasurementsService
+    ) -> None:
+        # Arrange — same device/measurement name, different sites
+        await _seed_measurements_table(postgres_url)
+        await _insert_measurement(
+            postgres_url,
+            ts=datetime.now(UTC),
+            site_id="site-J-other",
+            device_id="switch_1",
+            measurement="port_link_status",
+            unit="",
+            value="DOWN",
+        )
+
+        # Act — query a different site_id
+        actual = await measurements_service.get_latest(
+            site_id="site-J",
+            device_ids=["switch_1"],
+            measurements=["port_link_status"],
+        )
+
+        # Assert — the other site's row must not leak through
+        assert actual == []
