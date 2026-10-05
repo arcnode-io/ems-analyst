@@ -37,3 +37,21 @@ beta:
   market:
     wholesale_market: ercot
     settlement_point: HB_NORTH
+
+device_demo:
+  # Real device-fleet telemetry (ems-industrial-gateway + friends) behind
+  # analyst.arcnode.io, replacing the `demo` stage's CSV mock for
+  # measurements/description. Distinct stage name on purpose — `demo` is
+  # a hardcoded sentinel app_module.py checks for literally, not just a
+  # site_id value, so this can't just be "demo with a different site_id".
+  log_level: INFO
+  e2e: false
+  site_id: device_demo_site
+  settings:
+    llm_provider: ollama
+    ollama_base_url: http://173.211.12.43:11434/v1
+    ollama_chat_model: gemma4:26b
+    ollama_embedding_model: qwen3-embedding:4b
+  market:
+    wholesale_market: ercot
+    settlement_point: HB_NORTH

@@ -27,6 +27,26 @@ def test_load_config_returns_baked_defaults_without_customer_file() -> None:
     assert cfg.market.settlement_point == ErcotSettlementPoint.HB_NORTH
 
 
+def test_load_config_resolves_device_demo_stage() -> None:
+    """device_demo stage: the real device-fleet deployment's own site_id.
+
+    Distinct from `demo` (the CSV-mock trigger in app_module.py checks
+    for the literal string "demo") — this stage exists so the real
+    telemetry deployment has a proper named config rather than relying
+    on an unrecognized ENV value silently falling back to `local`.
+    """
+    # Arrange
+    env = {k: v for k, v in os.environ.items() if k != "CFG_CUSTOMER_PATH"}
+    env["ENV"] = "device_demo"
+    with patch.dict(os.environ, env, clear=True):
+        # Act
+        cfg = load_config()
+
+    # Assert
+    assert cfg.site_id == "device_demo_site"
+    assert cfg.settings.llm_provider == "ollama"
+
+
 def test_load_config_customer_merges_market_block(tmp_path: Path) -> None:
     """cfg.customer.yml at CFG_CUSTOMER_PATH wins over baked defaults."""
     # Arrange

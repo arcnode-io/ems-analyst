@@ -65,6 +65,7 @@ class _ConfigMap(BaseModel):
     local: StageConfig
     demo: StageConfig
     beta: StageConfig
+    device_demo: StageConfig
 
 
 class Config(BaseModel):
@@ -98,6 +99,7 @@ def load_config() -> Config:
         "local": config_map.local,
         "demo": config_map.demo,
         "beta": config_map.beta,
+        "device_demo": config_map.device_demo,
     }.get(env, config_map.local)
     return Config(
         log_level=stage.log_level,
