@@ -155,12 +155,23 @@ class MeasurementsService:
     ) -> list[LatestValue]:
         """Latest value for every requested (device_id, measurement) pair.
 
-        One query regardless of how many pairs are asked for — `DISTINCT
-        ON` picks the newest row per pair directly in Postgres. Exists so
+        One query regardless of how many pairs are asked for — exists so
         a rollup across many devices (e.g. device-status over a whole
         site) costs one round trip, not one per device: at real-fleet
         scale (hundreds of devices), N+1 isn't viable for an interactive
         chat response.
+
+        Used to be `DISTINCT ON (device_id, measurement) ... ORDER BY
+        device_id, measurement, ts DESC` over an ANY()-filtered set.
+        That forces Postgres to materialize and sort *every historical
+        row* for each pair before picking the newest one, since the
+        lookup index doesn't cover `value` — confirmed live against a
+        single pair with 37k rows: 11.3s, almost entirely random heap
+        reads. A LATERAL join instead does one `ORDER BY ts DESC LIMIT 1`
+        per requested pair, which walks the index in its existing sort
+        order and stops at the first row — O(1) per pair instead of
+        O(pair's history size). Same disease, same fix shape as
+        `describe_site`'s skip-scan (see description_service.py).
 
         A requested pair with zero matching rows is simply absent from
         the result — there's no bucketed-gap concept for a point-in-time
@@ -168,13 +179,17 @@ class MeasurementsService:
         """
         url = self._postgres_url or os.environ[_TIMESERIES_URL_ENV]
         sql = """
-            SELECT DISTINCT ON (device_id, measurement)
-                   device_id, measurement, ts, value
-            FROM measurements
-            WHERE site_id = $1
-              AND device_id = ANY($2::text[])
-              AND measurement = ANY($3::text[])
-            ORDER BY device_id, measurement, ts DESC
+            SELECT d.device_id, m.measurement, latest.ts, latest.value
+            FROM unnest($2::text[]) AS d(device_id)
+            CROSS JOIN unnest($3::text[]) AS m(measurement)
+            CROSS JOIN LATERAL (
+                SELECT ts, value FROM measurements t
+                WHERE t.site_id = $1
+                  AND t.device_id = d.device_id
+                  AND t.measurement = m.measurement
+                ORDER BY t.ts DESC
+                LIMIT 1
+            ) latest
         """
         async with connect(url) as conn:
             rows = await conn.fetch(sql, site_id, device_ids, measurements)
