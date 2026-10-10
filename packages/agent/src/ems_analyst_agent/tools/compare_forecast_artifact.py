@@ -7,11 +7,16 @@ hitting the turn's tool-call budget. Same fix shape as explain_dispatch:
 fetch both series, align, compute the error stats server-side, hand the
 model one number-filled sentence it can answer from directly.
 
+"Actual" comes from gridstatus.io (ERCOT DAM SPP), not the site's own
+historian: the historian has no market-price-publishing device on any
+deployment seen so far — real settlement price is external ISO data,
+not something a site's own meters produce. See [[forecast-no-shortcuts]].
+
 Single forecast surface exists today (dam_lmp_price @ HB_NORTH, see
-forecasts table) against this site's own dam_clearing_price_usd_per_mwh
-actuals — hardcoded pairing, not a generic N-measurement comparator,
-since there's exactly one real pairing to compare. Add parameters if
-a second forecast surface ships.
+forecasts table) against ERCOT's HB_NORTH day-ahead SPP — hardcoded
+pairing, not a generic N-measurement comparator, since there's exactly
+one real pairing to compare. Add parameters if a second forecast
+surface ships.
 """
 
 from datetime import UTC, datetime, timedelta
@@ -23,21 +28,33 @@ from ..isotime import iso_z
 from ..schemas import AnalystArtifact, LineSpec
 from ..server_client import ServerClient
 from ._common import _TelemetryDeps, _error_artifact, _fmt_window, _parse_window
-from .dispatch_explain_artifact import _DAM_PRICE_M, _MARKET_DEVICE_ID
 from .forecast_accuracy import ForecastAccuracyStats, compute_forecast_accuracy
-from .site_analytics import _bucketed_series
+from .market_prices import fetch_market_series
 
 _FORECAST_MEASUREMENT: Final[str] = "dam_lmp_price"
+_ACTUAL_DATASET: Final[str] = "ercot_spp_day_ahead_hourly"
+_ACTUAL_LOCATION: Final[str] = "HB_NORTH"
+_ACTUAL_TS_COLUMN: Final[str] = "interval_start_utc"
+_ACTUAL_VALUE_COLUMN: Final[str] = "spp"
+_SYNTHETIC_CAVEAT: Final[str] = (
+    "⚠ SYNTHETIC actual data (gridstatus.io unavailable) — "
+    "comparison is illustrative, not real settlement."
+)
 
 
 async def build_compare_forecast(
     client: ServerClient, window: timedelta
-) -> tuple[list[AnalystArtifact], ForecastAccuracyStats | None]:
+) -> tuple[list[AnalystArtifact], ForecastAccuracyStats | None, bool]:
     """One overlaid line chart (forecast + actual) + the error stats behind it.
 
     Retrospective window (end=now, start=now-window) — "how did the
     forecast do" asks about hours that have already settled, the
     opposite direction from get_forecast's forward-looking default.
+
+    The trailing bool is True when "actual" came from gridstatus's
+    synthetic fallback rather than a real settlement — the RunContext
+    wrapper needs it too, not just the chart note, so the LLM-visible
+    sentence carries the same caveat.
     """
     end = datetime.now(UTC)
     start = end - window
@@ -51,10 +68,21 @@ async def build_compare_forecast(
                 f"No {_FORECAST_MEASUREMENT} forecast over the last "
                 f"{_fmt_window(window)}.",
             )
-        ], None
+        ], None, False
     forecast = {p.forecast_for: p.value for p in forecast_series.points}
-    actual = await _bucketed_series(client, _MARKET_DEVICE_ID, _DAM_PRICE_M, start, end)
+    hours = max(int(window.total_seconds() // 3600) + 2, 1)
+    actual_points = await fetch_market_series(
+        dataset=_ACTUAL_DATASET,
+        location=_ACTUAL_LOCATION,
+        ts_column=_ACTUAL_TS_COLUMN,
+        value_column=_ACTUAL_VALUE_COLUMN,
+        start=start,
+        end=end,
+        limit=hours,
+    )
+    actual = {p.ts: p.value for p in actual_points}
     stats = compute_forecast_accuracy(forecast, actual)
+    is_synthetic = any(p.is_synthetic for p in actual_points)
     if stats is None:
         return [
             _error_artifact(
@@ -62,7 +90,13 @@ async def build_compare_forecast(
                 f"Forecast and actual data don't overlap in the last "
                 f"{_fmt_window(window)}.",
             )
-        ], None
+        ], None, is_synthetic
+    note = (
+        f"{stats.hours_compared}h compared, mean bias "
+        f"${stats.mean_bias:+.2f}/MWh, MAE ${stats.mae:.2f}/MWh"
+    )
+    if is_synthetic:
+        note = f"{_SYNTHETIC_CAVEAT} {note}"
     spec = LineSpec.model_validate(
         {
             "title": f"Forecast vs actual DAM price, last {_fmt_window(window)}",
@@ -85,16 +119,13 @@ async def build_compare_forecast(
                 },
             ],
             "dataAsOf": iso_z(),
-            "note": (
-                f"{stats.hours_compared}h compared, mean bias "
-                f"${stats.mean_bias:+.2f}/MWh, MAE ${stats.mae:.2f}/MWh"
-            ),
+            "note": note,
         }
     )
     art = AnalystArtifact.model_validate(
         {"kind": "line", "spec": spec.model_dump(by_alias=True)}
     )
-    return [art], stats
+    return [art], stats, is_synthetic
 
 
 async def compare_forecast_to_actual(
@@ -118,13 +149,14 @@ async def compare_forecast_to_actual(
     td = _parse_window(window)
     client = ctx.deps.server
     assert isinstance(client, ServerClient)
-    artifacts, stats = await build_compare_forecast(client, td)
+    artifacts, stats, is_synthetic = await build_compare_forecast(client, td)
     ctx.deps.artifacts.extend(artifacts)
     if stats is None:
         return f"No overlapping forecast/actual data over the last {window}."
     direction = "hotter" if stats.mean_bias > 0 else "cooler"
+    caveat = f"{_SYNTHETIC_CAVEAT} " if is_synthetic else ""
     return (
-        f"Over the last {stats.hours_compared}h, actual DAM price ran "
+        f"{caveat}Over the last {stats.hours_compared}h, actual DAM price ran "
         f"{direction} than forecast on average: forecast avg "
         f"${stats.forecast_avg:.2f}/MWh vs actual avg ${stats.actual_avg:.2f}/MWh "
         f"(mean bias ${stats.mean_bias:+.2f}/MWh, MAE ${stats.mae:.2f}/MWh). "

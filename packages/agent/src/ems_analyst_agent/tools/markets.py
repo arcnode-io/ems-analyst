@@ -1,42 +1,31 @@
-"""gridstatus.io REST wrapper for ISO market data.
+"""gridstatus.io REST wrapper for ISO market data — LLM-facing text tool.
 
-Mirrors weather_api.py shape: raw httpx (no SDK), env-keyed auth, friendly
-error strings instead of exception propagation so the LLM can recover.
+Mirrors weather_api.py shape: friendly error strings instead of
+exception propagation so the LLM can recover. Falls back to synthetic
+(clearly labelled) rows when gridstatus is unavailable (quota /
+rate-limit / unknown dataset) — the free tier's monthly quota exhausts
+mid-cycle; without a fallback the agent loop stalls on every market
+question until the 1st of the month.
 
-Falls back to synthetic (clearly labelled) rows when gridstatus is
-unavailable (quota / rate-limit / unknown dataset). Reason: the free
-tier's monthly quota exhausts mid-cycle; without a fallback the agent
-loop stalls on every market question until the 1st of the month.
+The actual HTTP call + fallback-trigger logic lives in market_prices.py
+and is shared with fetch_market_series (the typed counterpart used by
+compare_forecast_to_actual) — this module only turns that into text.
 """
 
-import hashlib
-import math
-import os
-import random
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any, Final
 
 import httpx
 from pydantic import BaseModel
 
-GRIDSTATUS_BASE_URL: Final[str] = "https://api.gridstatus.io/v1"
-HTTP_TIMEOUT_SEC: Final[float] = 15.0
+from .market_prices import GRIDSTATUS_BASE_URL as GRIDSTATUS_BASE_URL
+from .market_prices import _fetch_payload, _GridstatusUnavailableError, _InvalidApiKeyError, _synthetic_points
+
 DEFAULT_LIMIT: Final[int] = 25
-# Status codes that mean "upstream is refusing us" rather than "you sent
-# a bad request" — we synthesise for these so the agent keeps working.
-_SYNTHETIC_TRIGGER_STATUS: Final[frozenset[int]] = frozenset({403, 404, 429})
 _SYNTHETIC_MARKER: Final[str] = (
     "⚠ SYNTHETIC DATA — gridstatus.io unavailable. Plausible "
     "magnitudes only; do NOT report as real market data."
 )
-# ERCOT DAM SPP HB_NORTH baseline — log-normal around ~$33/MWh with a
-# small chance of a scarcity spike. Numbers chosen to LOOK reasonable,
-# not to match a real distribution.
-_SYNTHETIC_LOG_MEAN: Final[float] = 3.5
-_SYNTHETIC_LOG_STD: Final[float] = 0.4
-_SYNTHETIC_SPIKE_PROB: Final[float] = 0.05
-_SYNTHETIC_SPIKE_MIN: Final[float] = 10.0
-_SYNTHETIC_SPIKE_MAX: Final[float] = 40.0
 _SYNTHETIC_MAX_ROWS: Final[int] = 5
 
 
@@ -81,46 +70,16 @@ async def get_market_data(
     Raises:
         ValueError: GRIDSTATUS_API_KEY env var missing.
     """
-    api_key = os.environ.get("GRIDSTATUS_API_KEY", "")
-    if not api_key:
-        raise ValueError(
-            "GRIDSTATUS_API_KEY environment variable not set. "
-            "Get a key from https://www.gridstatus.io"
-        )
-
-    params: dict[str, Any] = {"limit": limit}
-    if start is not None:
-        params["start_time"] = start
-    if end is not None:
-        params["end_time"] = end
-    if location is not None:
-        # Reason: gridstatus's generic row filter, not a dedicated location
-        # param — verified directly against the live API (an unrecognized
-        # filter_operator value returns a 422 listing the real enum).
-        params["filter_column"] = "location"
-        params["filter_value"] = location
-        params["filter_operator"] = "="
-
     try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(
-                f"{GRIDSTATUS_BASE_URL}/datasets/{dataset}/query",
-                params=params,
-                headers={"x-api-key": api_key},
-                timeout=HTTP_TIMEOUT_SEC,
-            )
-            resp.raise_for_status()
-            payload = resp.json()
+        payload = await _fetch_payload(dataset, start, end, limit, location)
+    except _InvalidApiKeyError:
+        return "Invalid GRIDSTATUS_API_KEY. Check the env var."
+    except _GridstatusUnavailableError as e:
+        # Reason: quota (403), unknown dataset (404), rate-limit (429) —
+        # fall back so the agent can still answer with clearly-marked
+        # synthetic rows.
+        return _synthetic_fallback(dataset, start, end, limit, e.status, location=location)
     except httpx.HTTPStatusError as e:
-        if e.response.status_code == 401:
-            return "Invalid GRIDSTATUS_API_KEY. Check the env var."
-        if e.response.status_code in _SYNTHETIC_TRIGGER_STATUS:
-            # Reason: quota (403), unknown dataset (404), rate-limit (429) —
-            # fall back so the agent can still answer with clearly-marked
-            # synthetic rows.
-            return _synthetic_fallback(
-                dataset, start, end, limit, e.response.status_code, location=location
-            )
         return f"Error querying {dataset}: HTTP {e.response.status_code}"
     except httpx.RequestError as e:
         return f"Network error querying {dataset}: {e!s}"
@@ -161,20 +120,13 @@ def _synthetic_fallback(
         Multi-line string with the synthetic marker + a normal `_format`
         rendering so downstream code treats it uniformly.
     """
-    seed_key = f"{dataset}|{start}|{end}|{location}".encode()
-    seed = int(hashlib.sha256(seed_key).hexdigest()[:16], 16)
-    # Reason: non-crypto — this seeds fake price rows for LLM display.
-    # `random.Random` is exactly what we want; suppress ruff S311 + bandit B311.
-    rng = random.Random(seed)  # noqa: S311  # nosec B311
-    n_rows = min(limit, _SYNTHETIC_MAX_ROWS)
+    seed_key = f"{dataset}|{start}|{end}|{location}"
     anchor = (now or datetime.now(UTC)).replace(minute=0, second=0, microsecond=0)
-    rows: list[_SyntheticRow] = []
-    for i in range(n_rows):
-        ts = (anchor - timedelta(hours=n_rows - i - 1)).isoformat()
-        base = math.exp(rng.gauss(_SYNTHETIC_LOG_MEAN, _SYNTHETIC_LOG_STD))
-        if rng.random() < _SYNTHETIC_SPIKE_PROB:
-            base *= rng.uniform(_SYNTHETIC_SPIKE_MIN, _SYNTHETIC_SPIKE_MAX)
-        rows.append(_SyntheticRow(ts=ts, value=round(base, 2), location=location))
+    n_rows = min(limit, _SYNTHETIC_MAX_ROWS)
+    points = _synthetic_points(anchor, n_rows, seed_key)
+    rows = [
+        _SyntheticRow(ts=p.ts.isoformat(), value=p.value, location=location) for p in points
+    ]
     header = f"{_SYNTHETIC_MARKER} (gridstatus HTTP {status})"
     payload: dict[str, Any] = {"data": [r.model_dump(exclude_none=True) for r in rows]}
     return f"{header}\n{_format(dataset, payload)}"
