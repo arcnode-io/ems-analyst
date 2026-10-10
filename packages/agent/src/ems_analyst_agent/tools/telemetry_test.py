@@ -161,12 +161,10 @@ class TestBuildSiteDescription:
                 MeasurementPair(
                     device_id="market_01",
                     measurement="dam_clearing_price_usd_per_mwh",
-                    samples=712,
                 ),
                 MeasurementPair(
                     device_id="bess_module_01",
                     measurement="state_of_charge",
-                    samples=712,
                 ),
             ],
         )

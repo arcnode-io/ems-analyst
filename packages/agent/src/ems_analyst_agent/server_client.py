@@ -65,11 +65,10 @@ class LatestValuesResponse(BaseModel):
 
 
 class MeasurementPair(BaseModel):
-    """One (device, measurement) pair + sample count at the site."""
+    """One (device, measurement) pair that's queryable at the site."""
 
     device_id: str
     measurement: str
-    samples: int
 
 
 class SiteDescription(BaseModel):

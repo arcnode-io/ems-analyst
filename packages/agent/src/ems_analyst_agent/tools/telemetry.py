@@ -73,8 +73,8 @@ async def build_site_description(client: ServerClient) -> AnalystArtifact:
     """Queryable (device, measurement) pairs — the historian inventory.
 
     The discovery surface: what the agent can actually pull, with the
-    exact names + sample counts. Includes non-device series (e.g. market
-    price feeds) that the DTM has no device for.
+    exact names. Includes non-device series (e.g. market price feeds)
+    that the DTM has no device for.
     """
     desc = await client.describe_site()
     if not desc.pairs:
@@ -82,8 +82,7 @@ async def build_site_description(client: ServerClient) -> AnalystArtifact:
             "not_found", "No measurements published for this site yet."
         )
     rows: list[dict[str, str | int]] = [
-        {"device": p.device_id, "measurement": p.measurement, "samples": p.samples}
-        for p in desc.pairs
+        {"device": p.device_id, "measurement": p.measurement} for p in desc.pairs
     ]
     devices = {p.device_id for p in desc.pairs}
     spec = TableSpec.model_validate(
@@ -92,7 +91,6 @@ async def build_site_description(client: ServerClient) -> AnalystArtifact:
             "columns": [
                 {"key": "device", "label": "Device"},
                 {"key": "measurement", "label": "Measurement"},
-                {"key": "samples", "label": "Samples", "align": "right"},
             ],
             "rows": rows,
             "dataAsOf": iso_z(),

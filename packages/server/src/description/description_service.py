@@ -29,7 +29,7 @@ class DescriptionService:
         self._postgres_url = postgres_url
 
     async def describe(self, site_id: str) -> SiteDescription:
-        """Return (device, measurement, sample_count) rows for the site.
+        """Return distinct (device, measurement) pairs queryable at the site.
 
         `GROUP BY device_id, measurement` (or even bare `DISTINCT`) scans
         the whole table: confirmed live against a real single-site
@@ -39,12 +39,17 @@ class DescriptionService:
         timing out the agent's 15s HTTP budget. A recursive-CTE index
         skip-scan over `idx_measurements_lookup (site_id, device_id,
         measurement, ts DESC)` instead walks directly from one distinct
-        (device_id, measurement) pair to the next via the B-tree, then a
-        per-pair COUNT(*) is a cheap bounded index-range scan (just that
-        series' rows, not the table). Confirmed live: 7.8s for the same
-        4,401 pairs with full counts — same result, same portable plain
-        SQL (no TimescaleDB-only functions — this also runs on the
-        Aurora + pg_partman defense variant per system_adr.md §7).
+        (device_id, measurement) pair to the next via the B-tree — O(distinct
+        pairs), not O(rows). Confirmed live: ~290ms for 4,401 pairs.
+
+        This used to also return a per-pair sample count via a correlated
+        `COUNT(*)` subquery, but that count is itself unbounded — O(rows in
+        that series), run once per pair — and reintroduced the same
+        O(table size) blowup this query exists to avoid (confirmed live:
+        100s+ and climbing as telemetry accumulates). The count was
+        display-only (a "Samples" column), so it's dropped rather than
+        bounded or cached — see system_adr.md for anything that changes
+        this back.
         """
         url = self._postgres_url or os.environ[_TIMESERIES_URL_ENV]
         sql = """
@@ -62,24 +67,14 @@ class DescriptionService:
                     ORDER BY device_id, measurement LIMIT 1
                 ) nxt
             )
-            SELECT
-                pairs.device_id,
-                pairs.measurement,
-                (SELECT COUNT(*) FROM measurements m
-                 WHERE m.site_id = $1
-                   AND m.device_id = pairs.device_id
-                   AND m.measurement = pairs.measurement) AS samples
+            SELECT pairs.device_id, pairs.measurement
             FROM pairs
             ORDER BY pairs.device_id, pairs.measurement
         """
         async with connect(url) as conn:
             rows = await conn.fetch(sql, site_id)
         pairs = [
-            MeasurementPair(
-                device_id=str(r["device_id"]),
-                measurement=str(r["measurement"]),
-                samples=int(r["samples"]),
-            )
+            MeasurementPair(device_id=str(r["device_id"]), measurement=str(r["measurement"]))
             for r in rows
         ]
         return SiteDescription(site_id=site_id, pairs=pairs)

@@ -4,11 +4,10 @@ from pydantic import BaseModel
 
 
 class MeasurementPair(BaseModel):
-    """One (device, measurement) pair + how many samples have landed."""
+    """One (device, measurement) pair that's queryable at the site."""
 
     device_id: str
     measurement: str
-    samples: int
 
 
 class SiteDescription(BaseModel):

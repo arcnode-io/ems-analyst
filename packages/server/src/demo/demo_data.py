@@ -210,15 +210,14 @@ class DemoData:
         ]
 
     async def describe(self, site_id: str) -> SiteDescription:
-        """(device, measurement, sample-count) inventory — mirrors DescriptionService."""
-        counts: dict[tuple[str, str], int] = {}
+        """Distinct (device, measurement) pairs — mirrors DescriptionService."""
+        seen: set[tuple[str, str]] = set()
         for row in self._rows:
             if row.site_id != site_id:
                 continue
-            key = (row.device_id, row.measurement)
-            counts[key] = counts.get(key, 0) + 1
+            seen.add((row.device_id, row.measurement))
         pairs = [
-            MeasurementPair(device_id=dev, measurement=meas, samples=n)
-            for (dev, meas), n in sorted(counts.items())
+            MeasurementPair(device_id=dev, measurement=meas)
+            for dev, meas in sorted(seen)
         ]
         return SiteDescription(site_id=site_id, pairs=pairs)

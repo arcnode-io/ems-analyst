@@ -4,7 +4,7 @@ Schema: measurements(ts timestamptz, site_id text, device_id text,
 measurement text, unit text, value jsonb) — same table
 MeasurementsService reads, see test_measurements_service.py.
 
-describe() must return correct (device, measurement, samples) triples
+describe() must return correct distinct (device, measurement) pairs
 without a full-table scan: in a single-site deployment, filtering by
 site_id alone has near-zero selectivity (nearly every row matches), so
 a naive `GROUP BY device_id, measurement` or `SELECT DISTINCT` scans
@@ -12,6 +12,11 @@ the entire table regardless — confirmed live against the real
 device_demo_site deployment (34s against ~58M rows, timing out the
 agent's 15s HTTP budget). The index-skip-scan approach this service
 uses instead touches O(distinct pairs) index entries, not O(rows).
+
+No per-pair sample count: an earlier version added one via a
+correlated COUNT(*) subquery, but that's O(rows in that series) per
+pair and reintroduced the same O(table size) blowup this query exists
+to avoid. Dropped since it was a display-only column, not load-bearing.
 """
 
 import json
@@ -89,7 +94,7 @@ class TestDescriptionService:
     """AAA — site inventory: distinct (device, measurement) pairs + counts."""
 
     @pytest.mark.asyncio
-    async def test_describe_returns_distinct_pairs_with_counts(
+    async def test_describe_returns_distinct_pairs(
         self, postgres_url: str, description_service: DescriptionService
     ) -> None:
         # Arrange — 3 samples for one pair, 1 for another, different site ignored
@@ -126,10 +131,10 @@ class TestDescriptionService:
 
         # Assert
         assert actual.site_id == "site-K"
-        pairs = {(p.device_id, p.measurement): p.samples for p in actual.pairs}
+        pairs = {(p.device_id, p.measurement) for p in actual.pairs}
         assert pairs == {
-            ("bess_module_01", "active_power"): 3,
-            ("cdu_01", "status"): 1,
+            ("bess_module_01", "active_power"),
+            ("cdu_01", "status"),
         }
 
     @pytest.mark.asyncio

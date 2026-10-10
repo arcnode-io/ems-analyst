@@ -76,12 +76,10 @@ class TestServerClientDescription:
                 {
                     "device_id": "market_01",
                     "measurement": "dam_clearing_price_usd_per_mwh",
-                    "samples": 712,
                 },
                 {
                     "device_id": "bess_module_01",
                     "measurement": "state_of_charge",
-                    "samples": 712,
                 },
             ],
         }
@@ -96,7 +94,6 @@ class TestServerClientDescription:
         assert len(actual.pairs) == 2
         assert actual.pairs[0].device_id == "market_01"
         assert actual.pairs[0].measurement == "dam_clearing_price_usd_per_mwh"
-        assert actual.pairs[0].samples == 712
 
 
 class TestServerClientForecast:

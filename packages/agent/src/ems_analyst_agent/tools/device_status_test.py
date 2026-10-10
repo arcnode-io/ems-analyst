@@ -67,13 +67,9 @@ class TestBuildDeviceStatus:
         desc = SiteDescription(
             site_id="demo-site",
             pairs=[
-                MeasurementPair(
-                    device_id="bess_module_01", measurement="active_power", samples=712
-                ),
-                MeasurementPair(
-                    device_id="bess_module_01", measurement="status", samples=1
-                ),
-                MeasurementPair(device_id="cdu_01", measurement="status", samples=1),
+                MeasurementPair(device_id="bess_module_01", measurement="active_power"),
+                MeasurementPair(device_id="bess_module_01", measurement="status"),
+                MeasurementPair(device_id="cdu_01", measurement="status"),
             ],
         )
         ts = datetime(2026, 5, 18, 1, tzinfo=UTC)
@@ -115,9 +111,7 @@ class TestBuildDeviceStatus:
         desc = SiteDescription(
             site_id="demo-site",
             pairs=[
-                MeasurementPair(
-                    device_id="operating_envelope", measurement="status", samples=1
-                )
+                MeasurementPair(device_id="operating_envelope", measurement="status")
             ],
         )
         ts = datetime(2026, 5, 18, tzinfo=UTC)
@@ -149,12 +143,10 @@ class TestBuildDeviceStatus:
                 MeasurementPair(
                     device_id="gpu_node_1",
                     measurement="gpu_1_throttle_reason",
-                    samples=10,
                 ),
                 MeasurementPair(
                     device_id="gpu_node_2",
                     measurement="gpu_1_throttle_reason",
-                    samples=10,
                 ),
             ],
         )
@@ -192,9 +184,7 @@ class TestBuildDeviceStatus:
         desc = SiteDescription(
             site_id="demo-site",
             pairs=[
-                MeasurementPair(
-                    device_id="poi_meter_1", measurement="active_power", samples=10
-                )
+                MeasurementPair(device_id="poi_meter_1", measurement="active_power")
             ],
         )
         fake = _FakeServerClient(description=desc)
@@ -213,7 +203,6 @@ class TestBuildDeviceStatus:
             MeasurementPair(
                 device_id=f"gpu_node_{i}",
                 measurement="gpu_1_throttle_reason",
-                samples=1,
             )
             for i in range(1, 8)
         ]
@@ -250,7 +239,6 @@ class TestBuildDeviceStatus:
                 MeasurementPair(
                     device_id="market_01",
                     measurement="dam_clearing_price_usd_per_mwh",
-                    samples=712,
                 )
             ],
         )

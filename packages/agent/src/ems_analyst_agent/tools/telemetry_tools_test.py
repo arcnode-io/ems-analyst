@@ -32,9 +32,7 @@ class TestDescribeSiteCache:
         desc = SiteDescription(
             site_id="demo-site",
             pairs=[
-                MeasurementPair(
-                    device_id="bess_module_01", measurement="active_power", samples=1
-                )
+                MeasurementPair(device_id="bess_module_01", measurement="active_power")
             ],
         )
         fake_client = Mock(spec=ServerClient)

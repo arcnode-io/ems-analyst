@@ -31,7 +31,6 @@ class _FakeDescriptionService:
                 MeasurementPair(
                     device_id="market_01",
                     measurement="dam_clearing_price_usd_per_mwh",
-                    samples=712,
                 ),
             ],
         )
@@ -67,7 +66,6 @@ class TestDescriptionRoute:
         assert body["site_id"] == _DEPLOY_SITE
         assert body["pairs"][0]["device_id"] == "market_01"
         assert body["pairs"][0]["measurement"] == "dam_clearing_price_usd_per_mwh"
-        assert body["pairs"][0]["samples"] == 712
 
     def test_query_runs_against_deploy_site(
         self, client: tuple[TestClient, _FakeDescriptionService]
