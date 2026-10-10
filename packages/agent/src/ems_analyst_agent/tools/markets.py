@@ -46,6 +46,7 @@ class _SyntheticRow(BaseModel):
     ts: str
     value: float
     note: str = "SYNTHETIC"
+    location: str | None = None
 
 
 async def get_market_data(
@@ -53,6 +54,7 @@ async def get_market_data(
     start: str | None = None,
     end: str | None = None,
     limit: int = DEFAULT_LIMIT,
+    location: str | None = None,
 ) -> str:
     """Query a gridstatus.io dataset and return an LLM-friendly summary.
 
@@ -64,6 +66,11 @@ async def get_market_data(
         start: ISO-8601 start, e.g. '2026-05-15T00:00:00Z'. None = latest.
         end: ISO-8601 end. None = open-ended.
         limit: Row cap. Default 25 keeps responses LLM-context friendly.
+        location: Exact value of the dataset's `location` column, e.g.
+            'HB_NORTH' for an ERCOT trading hub. Without this, a
+            multi-node dataset like ercot_spp_day_ahead_hourly returns
+            whatever node sorts first — never necessarily the settlement
+            point a forecast was made for. None = no location filter.
 
     Returns:
         Multi-line text summary: dataset name + first N rows.
@@ -86,6 +93,13 @@ async def get_market_data(
         params["start_time"] = start
     if end is not None:
         params["end_time"] = end
+    if location is not None:
+        # Reason: gridstatus's generic row filter, not a dedicated location
+        # param — verified directly against the live API (an unrecognized
+        # filter_operator value returns a 422 listing the real enum).
+        params["filter_column"] = "location"
+        params["filter_value"] = location
+        params["filter_operator"] = "="
 
     try:
         async with httpx.AsyncClient() as client:
@@ -105,7 +119,7 @@ async def get_market_data(
             # fall back so the agent can still answer with clearly-marked
             # synthetic rows.
             return _synthetic_fallback(
-                dataset, start, end, limit, e.response.status_code
+                dataset, start, end, limit, e.response.status_code, location=location
             )
         return f"Error querying {dataset}: HTTP {e.response.status_code}"
     except httpx.RequestError as e:
@@ -121,12 +135,13 @@ def _synthetic_fallback(
     limit: int,
     status: int,
     now: datetime | None = None,
+    location: str | None = None,
 ) -> str:
     """Generate plausible synthetic rows when gridstatus is unavailable.
 
-    Deterministic PRNG seeded by (dataset, start, end): repeated calls
-    within a turn return the same rows so the LLM doesn't see flapping
-    numbers on retry.
+    Deterministic PRNG seeded by (dataset, start, end, location): repeated
+    calls within a turn return the same rows so the LLM doesn't see
+    flapping numbers on retry.
 
     Args:
         dataset: The requested dataset slug (echoed into the header).
@@ -136,12 +151,17 @@ def _synthetic_fallback(
         status: The upstream HTTP status that triggered the fallback.
         now: Anchor time for generated row timestamps. Defaults to
             `datetime.now(UTC)` rounded to the hour. Exposed for tests.
+        location: Echoed into each fake row so a synthetic-fallback
+            response still names the location it's standing in for —
+            without this, a comparison against a real forecast would
+            silently look like it was for the right hub when gridstatus
+            was never actually reached. None = omitted from the rows.
 
     Returns:
         Multi-line string with the synthetic marker + a normal `_format`
         rendering so downstream code treats it uniformly.
     """
-    seed_key = f"{dataset}|{start}|{end}".encode()
+    seed_key = f"{dataset}|{start}|{end}|{location}".encode()
     seed = int(hashlib.sha256(seed_key).hexdigest()[:16], 16)
     # Reason: non-crypto — this seeds fake price rows for LLM display.
     # `random.Random` is exactly what we want; suppress ruff S311 + bandit B311.
@@ -154,9 +174,9 @@ def _synthetic_fallback(
         base = math.exp(rng.gauss(_SYNTHETIC_LOG_MEAN, _SYNTHETIC_LOG_STD))
         if rng.random() < _SYNTHETIC_SPIKE_PROB:
             base *= rng.uniform(_SYNTHETIC_SPIKE_MIN, _SYNTHETIC_SPIKE_MAX)
-        rows.append(_SyntheticRow(ts=ts, value=round(base, 2)))
+        rows.append(_SyntheticRow(ts=ts, value=round(base, 2), location=location))
     header = f"{_SYNTHETIC_MARKER} (gridstatus HTTP {status})"
-    payload: dict[str, Any] = {"data": [r.model_dump() for r in rows]}
+    payload: dict[str, Any] = {"data": [r.model_dump(exclude_none=True) for r in rows]}
     return f"{header}\n{_format(dataset, payload)}"
 
 

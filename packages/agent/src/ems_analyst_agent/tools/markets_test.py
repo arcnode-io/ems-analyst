@@ -108,6 +108,24 @@ class TestSyntheticFallbackHelper:
             # Assert
             assert f"HTTP {status}" in actual
 
+    def test_location_echoed_in_rows(self) -> None:
+        """Even fake rows should say which location they're pretending to be —
+        otherwise a synthetic-fallback comparison against a real forecast
+        reads as being for the right hub when it was never filtered at all."""
+        # Arrange + Act
+        actual = _synthetic_fallback(
+            "ercot_spp_day_ahead_hourly",
+            None,
+            None,
+            3,
+            429,
+            now=_FIXED_NOW,
+            location="HB_NORTH",
+        )
+
+        # Assert
+        assert "HB_NORTH" in actual
+
 
 class TestHttpStatusMapping:
     """End-to-end: httpx mocked with pook, assert branch selection."""
@@ -192,3 +210,32 @@ class TestHttpStatusMapping:
         # Assert — real path renders normally, no synthetic marker.
         assert "SYNTHETIC" not in actual
         assert "wind=100.0" in actual
+
+    @pytest.mark.asyncio
+    async def test_location_sends_gridstatus_filter_params(self) -> None:
+        """location= must reach gridstatus as its filter triple.
+
+        Without this, a multi-node dataset (e.g. ercot_spp_day_ahead_hourly)
+        returns whatever node sorts first — never the hub a forecast was
+        made for — because get_market_data had no way to ask for one.
+        """
+        # Arrange — mock only matches if the filter params are present;
+        # an unfiltered request would leave this mock unmatched and fail.
+        pook.get(
+            f"{GRIDSTATUS_BASE_URL}/datasets/ercot_spp_day_ahead_hourly/query"
+        ).param("filter_column", "location").param("filter_value", "HB_NORTH").param(
+            "filter_operator", "="
+        ).reply(
+            200
+        ).json(
+            {"data": [{"location": "HB_NORTH", "spp": 161.11}]}
+        )
+
+        # Act
+        actual = await get_market_data(
+            dataset="ercot_spp_day_ahead_hourly", location="HB_NORTH"
+        )
+
+        # Assert
+        assert "SYNTHETIC" not in actual
+        assert "HB_NORTH" in actual
