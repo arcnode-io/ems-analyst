@@ -51,11 +51,11 @@ async def describe_site(ctx: RunContext[_TelemetryDeps]) -> str:
     """Discover what's queryable — call this BEFORE query_timeseries.
 
     Returns the (device, measurement) inventory as a table: the exact
-    historian names + sample counts. Use the names it returns verbatim.
-    Catches the failure mode where the model guesses 'lmp' or
-    'clearing_price' but the data publishes as
-    'dam_clearing_price_usd_per_mwh'. Covers non-device series (e.g.
-    market price feeds) that get_topology won't show.
+    historian names. Use the names it returns verbatim. Catches the
+    failure mode where the model guesses 'lmp' or 'clearing_price' but
+    the data publishes as 'dam_clearing_price_usd_per_mwh'. Covers
+    non-device series (e.g. market price feeds) that get_topology
+    won't show.
     """
     # Code-enforced once-per-turn: system.md says "at most once" but the
     # model routinely ignored it, burning tool-call budget on repeats.

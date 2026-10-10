@@ -21,6 +21,7 @@ from .memory import MemoryService
 from .prompts import load_system_prompt
 from .schemas import AnalystMessage, TextContent
 from .server_client import ServerClient
+from .tools._common import _omit_if_cached
 from .tools.domain_mcp import create_mcp_server
 from .tools.forecast import get_forecast
 from .tools.geopolitical import get_energy_news
@@ -81,8 +82,8 @@ class Agent:
             Tool(get_weather_forecast),
             Tool(get_market_data),
             Tool(get_energy_news),
-            Tool(get_topology),
-            Tool(describe_site),
+            Tool(get_topology, prepare=_omit_if_cached("topology_cache")),
+            Tool(describe_site, prepare=_omit_if_cached("site_description_cache")),
             Tool(get_device_status),
             Tool(explain_dispatch),
             Tool(query_timeseries),
