@@ -5,7 +5,7 @@ requires-python = ">=3.13,<3.14"
 dependencies = [
     "pydantic>=2.9.2",
     "pyyaml>=6.0.2",
-    "pydantic-ai>=1.106.0,<2",  # PYSEC-2026-3692; 2.x is a separate migration
+    "pydantic-ai>=1.107.7,<2",  # CVE-2026-107287/90-95; 2.x is a separate migration
     "fastmcp>=3.3.1",
     "asyncpg>=0.30.0",
     "pgvector>=0.3.6",
