@@ -40,6 +40,7 @@ _TOOL_LABELS: dict[str, str] = {
     "explain_dispatch": "Correlating dispatch against price",
     "query_timeseries": "Querying the site historian",
     "get_forecast": "Pulling the published forecast",
+    "compare_forecast_to_actual": "Comparing forecast to actual price",
     "query_markets": "Computing market revenue",
     "query_energy_breakdown": "Computing the energy mix",
     "get_weather_forecast": "Checking the weather",

@@ -21,6 +21,7 @@ from .memory import MemoryService
 from .prompts import load_system_prompt
 from .schemas import AnalystMessage, TextContent
 from .server_client import ServerClient
+from .tools.compare_forecast_artifact import compare_forecast_to_actual
 from .tools.domain_mcp import create_mcp_server
 from .tools.forecast import get_forecast
 from .tools.geopolitical import get_energy_news
@@ -87,6 +88,7 @@ class Agent:
             Tool(explain_dispatch),
             Tool(query_timeseries),
             Tool(get_forecast),
+            Tool(compare_forecast_to_actual),
             Tool(query_markets),
             Tool(query_energy_breakdown),
         ]

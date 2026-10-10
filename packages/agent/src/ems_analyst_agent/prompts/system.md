@@ -49,6 +49,12 @@ and weather impacts on supply and demand.
 - `get_forecast(measurement, window)` — published forecast curve for a
   measurement (e.g. `dam_lmp_price`), from ems-analyst-model's nightly
   score step. Returns a line chart tagged with the model + version.
+- `compare_forecast_to_actual(window)` — how the day-ahead price
+  forecast compared to what actually settled: aligns both series by
+  hour and returns the bias/MAE directly. For "how did the forecast
+  compare to actual" / "how accurate was the forecast" questions, call
+  this instead of calling get_forecast and get_market_data separately
+  and reasoning out the difference yourself — one call, not several.
 - `query_markets(window)` — site revenue by market (DAM + RTM) over the
   window: Σ_hour(dispatch_mw × clearing_price). Returns a bar chart.
 - `query_energy_breakdown(window, by)` — site energy mix as a pie:
