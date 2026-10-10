@@ -7,13 +7,9 @@ without importing one another.
 """
 
 import re
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Literal
-
-from pydantic_ai import RunContext
-from pydantic_ai.tools import ToolDefinition
 
 from ..isotime import iso_z
 from ..schemas import AnalystArtifact, BarSpec, LineSpec, PieSpec, TableSpec
@@ -44,34 +40,6 @@ class _TelemetryDeps:
     device_api: object | None = None
     site_description_cache: AnalystArtifact | None = None
     topology_cache: AnalystArtifact | None = None
-
-
-_PrepareFunc = Callable[
-    [RunContext[_TelemetryDeps], ToolDefinition], Awaitable[ToolDefinition | None]
-]
-
-
-def _omit_if_cached(cache_attr: str) -> _PrepareFunc:
-    """Build a `prepare` hook that pulls a tool off the menu once cached.
-
-    describe_site / get_topology already short-circuit the refetch on a
-    cache hit (see their docstrings) — but pydantic-ai charges
-    `tool_calls_limit` for every call the model *requests*, in
-    `_agent_graph.py`'s `check_before_tool_call`, before the tool body
-    ever runs. A cached, 0ms "already have it" reply still burns a
-    budget slot. Removing the tool from the offered list once cached
-    means the model can't ask for it a second time — the repeat never
-    happens, instead of happening fast.
-    """
-
-    async def prepare(
-        ctx: RunContext[_TelemetryDeps], tool_def: ToolDefinition
-    ) -> ToolDefinition | None:
-        if getattr(ctx.deps, cache_attr) is not None:
-            return None
-        return tool_def
-
-    return prepare
 
 
 def _parse_window(window: str) -> timedelta:
