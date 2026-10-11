@@ -11,15 +11,25 @@ mock-injection seam fetch_market_series doesn't otherwise need.
 """
 
 import os
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock, Mock
 
 import pook
 import pytest
 
-from ..schemas import LineSpec
-from ..server_client import ForecastPoint, ForecastSeries
-from .compare_forecast_artifact import build_compare_forecast
+from ..schemas import LineSpec, TableSpec
+from ..server_client import ForecastPoint, ForecastSeries, ServerClient
+from ._common import _TelemetryDeps
+from .compare_forecast_artifact import build_compare_forecast, compare_forecast_to_actual
 from .market_prices import GRIDSTATUS_BASE_URL
+
+
+@dataclass
+class _FakeCtx:
+    """Minimal RunContext stand-in — the wrapper only ever reads `.deps`."""
+
+    deps: _TelemetryDeps
 
 _T0 = datetime(2026, 1, 1, 0, tzinfo=UTC)
 _QUERY_URL = f"{GRIDSTATUS_BASE_URL}/datasets/ercot_spp_day_ahead_hourly/query"
@@ -172,3 +182,38 @@ class TestBuildCompareForecast:
         assert isinstance(spec, LineSpec)
         assert spec.note is not None
         assert "SYNTHETIC" in spec.note
+
+
+class TestCompareForecastToActualRender:
+    """AAA — render='table' re-renders the chart as a forecast/actual table."""
+
+    def setup_method(self) -> None:
+        os.environ["GRIDSTATUS_API_KEY"] = "fake-key-for-tests"
+        pook.on()
+
+    def teardown_method(self) -> None:
+        pook.off()
+        pook.reset()
+
+    @pytest.mark.asyncio
+    async def test_render_table_keeps_both_series_as_columns(self) -> None:
+        # Arrange — forecast [30,32,34,36], actual [31,30,40,36], same as the
+        # chart test above, but asking for the table rendering this time.
+        fake_client = Mock(spec=ServerClient)
+        fake_client.get_forecast = AsyncMock(return_value=_forecast([30, 32, 34, 36]))
+        pook.get(_QUERY_URL).reply(200).json({"data": _actual_rows([31, 30, 40, 36])})
+        ctx = _FakeCtx(deps=_TelemetryDeps(server=fake_client))
+
+        # Act
+        await compare_forecast_to_actual(
+            ctx,  # ty: ignore[invalid-argument-type]
+            window="4h",
+            render="table",
+        )
+
+        # Assert — one artifact, table kind, one column per series
+        assert len(ctx.deps.artifacts) == 1
+        spec = ctx.deps.artifacts[0].spec
+        assert isinstance(spec, TableSpec)
+        assert [c.key for c in spec.columns] == ["time", "forecast", "actual"]
+        assert len(spec.rows) == 4

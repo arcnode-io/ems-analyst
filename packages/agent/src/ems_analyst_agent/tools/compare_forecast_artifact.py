@@ -27,7 +27,7 @@ from pydantic_ai import RunContext
 from ..isotime import iso_z
 from ..schemas import AnalystArtifact, LineSpec
 from ..server_client import ServerClient
-from ._common import _TelemetryDeps, _error_artifact, _fmt_window, _parse_window
+from ._common import Render, _TelemetryDeps, _error_artifact, _fmt_window, _parse_window, _to_table
 from .forecast_accuracy import ForecastAccuracyStats, compute_forecast_accuracy
 from .market_prices import fetch_market_series
 
@@ -131,6 +131,7 @@ async def build_compare_forecast(
 async def compare_forecast_to_actual(
     ctx: RunContext[_TelemetryDeps],
     window: str = "24h",
+    render: Render = "chart",
 ) -> str:
     """How the published day-ahead price forecast compared to actual — deterministic.
 
@@ -145,11 +146,16 @@ async def compare_forecast_to_actual(
             looks BACKWARD from now (opposite direction from
             get_forecast's default), since this compares against
             already-settled actuals.
+        render: "chart" for the overlaid line chart, "table" for a
+            forecast/actual-by-hour data table — use "table" when the
+            user asks for the numbers as a table.
     """
     td = _parse_window(window)
     client = ctx.deps.server
     assert isinstance(client, ServerClient)
     artifacts, stats, is_synthetic = await build_compare_forecast(client, td)
+    if render == "table":
+        artifacts = [_to_table(a) for a in artifacts]
     ctx.deps.artifacts.extend(artifacts)
     if stats is None:
         return f"No overlapping forecast/actual data over the last {window}."

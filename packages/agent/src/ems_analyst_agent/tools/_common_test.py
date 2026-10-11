@@ -73,6 +73,47 @@ class TestToTable:
             {"category": "RTM", "value": 90.0},
         ]
 
+    def test_multi_series_line_becomes_wide_table_aligned_by_x(self) -> None:
+        # Arrange — forecast/actual overlap at t1, each has one x the other lacks
+        multi = AnalystArtifact.model_validate(
+            {
+                "kind": "line",
+                "spec": {
+                    "title": "Forecast vs actual",
+                    "xAxis": {"label": "Time", "kind": "time"},
+                    "yAxis": {"label": "Price", "unit": "$/MWh"},
+                    "series": [
+                        {
+                            "label": "forecast",
+                            "points": [
+                                {"x": "t1", "y": 10.0},
+                                {"x": "t2", "y": 20.0},
+                            ],
+                        },
+                        {
+                            "label": "actual",
+                            "points": [
+                                {"x": "t1", "y": 11.0},
+                                {"x": "t3", "y": 33.0},
+                            ],
+                        },
+                    ],
+                    "dataAsOf": _TS,
+                },
+            }
+        )
+
+        # Act
+        spec = _table_spec(_to_table(multi))
+
+        # Assert — one column per series, one row per x across BOTH series
+        assert [c.key for c in spec.columns] == ["time", "forecast", "actual"]
+        assert spec.rows == [
+            {"time": "t1", "forecast": 10.0, "actual": 11.0},
+            {"time": "t2", "forecast": 20.0, "actual": None},
+            {"time": "t3", "forecast": None, "actual": 33.0},
+        ]
+
     def test_error_artifact_passes_through(self) -> None:
         # Arrange
         err = AnalystArtifact.model_validate(

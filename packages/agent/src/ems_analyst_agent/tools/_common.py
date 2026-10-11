@@ -90,13 +90,30 @@ def _to_table(artifact: AnalystArtifact) -> AnalystArtifact:
     spec = artifact.spec
     columns: list[dict[str, str]]
     rows: list[dict[str, str | float | None]]
-    if isinstance(spec, LineSpec):
+    if isinstance(spec, LineSpec) and len(spec.series) == 1:
         series = spec.series[0]
         columns = [
             {"key": "time", "label": spec.x_axis.label},
             {"key": "value", "label": spec.y_axis.label},
         ]
         rows = [{"time": str(p.x), "value": p.y} for p in series.points]
+    elif isinstance(spec, LineSpec):
+        # Multi-series (e.g. forecast + actual): one column per series,
+        # one row per x value seen in ANY series — missing values are
+        # None rather than dropping the row, so a reader sees exactly
+        # where the series don't overlap.
+        columns = [{"key": "time", "label": spec.x_axis.label}] + [
+            {"key": s.label, "label": s.label} for s in spec.series
+        ]
+        by_x: dict[str, dict[str, str | float | None]] = {}
+        for s in spec.series:
+            for p in s.points:
+                x = str(p.x)
+                by_x.setdefault(x, {"time": x})[s.label] = p.y
+        rows = [by_x[x] for x in sorted(by_x)]
+        for row in rows:
+            for s in spec.series:
+                row.setdefault(s.label, None)
     elif isinstance(spec, BarSpec):
         series = spec.series[0]
         columns = [
