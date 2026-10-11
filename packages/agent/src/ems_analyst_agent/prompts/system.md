@@ -66,3 +66,9 @@ and weather impacts on supply and demand.
   OilPrice, S&P Commodity Insights.
 - Domain MCP server — vector + knowledge-graph search over the curated
   energy corpus (BESS, NERC-CIP, power economics, protocols).
+  Use `rag_search` for self-contained spec lookups, protocol fields/function
+  codes, numeric facts, and source passages. The graph is scoped to
+  cross-document standard supersession and multi-hop BESS chapter-5
+  control/incident chains; use `search_knowledge` or `verify_fact` for those,
+  and `combined_search` when they also need source context. Judge the evidence
+  yourself and say when it is insufficient.

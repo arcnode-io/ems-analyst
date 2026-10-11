@@ -11,8 +11,8 @@ Aura cloud and ISO self-hosted alike via the bolt protocol.
 
 Sources (public S3, no auth):
   vector        → vector-cloud.sql.gz | vector-airgapped.sql.gz (pg_dump)
-  graph (Neo4j) → graph-neo4j.cypher.gz     (apoc.export.cypher.all output)
-  graph (Neptune) → s3://arcnode-public/seed/graph-neptune/{vertices,edges}.csv
+  graph (Neo4j) → graph-neo4j-scoped-v1.cypher.gz (relationship-only Cypher)
+  graph (Neptune) → s3://arcnode-public/seed/graph-neptune-scoped-v1/{vertices,edges}.csv
                     loaded via Neptune Bulk Loader REST API (sigv4 IAM auth)
 
 Markers:
@@ -55,14 +55,12 @@ GRAPH_MARKER_SLICE = "graph"
 
 # Neptune Bulk Loader payload constants — see
 # https://docs.aws.amazon.com/neptune/latest/userguide/bulk-load.html
-# graph-neptune-v2/ has edges.csv stripped of multi-valued []-typed columns
-# (Neptune doesn't allow multi-valued props on edges, even though Graphiti's
-# default CSV export emits them). Vertices.csv is unchanged from the
-# original — vertex multi-vals are fine. Original kept at graph-neptune/
-# for Aura/self-hosted Neo4j paths that don't have this constraint.
-NEPTUNE_S3_SOURCE = "s3://arcnode-public/seed/graph-neptune-v2/"
+# Scoped graph: BESS §5 plus standard-version links, no graph embeddings.
+# Edge episode IDs are comma-delimited scalar strings: Neptune forbids
+# multi-valued edge properties, while Graphiti splits this field on read.
+NEPTUNE_S3_SOURCE = "s3://arcnode-public/seed/graph-neptune-scoped-v1/"
 NEPTUNE_S3_HTTPS_BASE = (
-    "https://arcnode-public.s3.us-east-1.amazonaws.com/seed/graph-neptune-v2/"
+    "https://arcnode-public.s3.us-east-1.amazonaws.com/seed/graph-neptune-scoped-v1/"
 )
 
 # graphiti's NeptuneDriver expects these AOSS indexes pre-populated to
@@ -592,7 +590,7 @@ async def seed_graph_neptune(graph: NeptuneGraph) -> None:
 
     Hosts + IAM role come from cfg.customer.yml (written by CFN UserData
     from CFN outputs). S3 source prefix is hardcoded — pre-baked artifacts
-    at arcnode-public/seed/graph-neptune-v2/.
+    at arcnode-public/seed/graph-neptune-scoped-v1/.
 
     Two-phase: (1) Neptune Bulk Loader for the graph itself, (2)
     opensearch bulk for graphiti's AOSS lucene indexes (without these
@@ -620,11 +618,9 @@ async def seed_graph_neptune(graph: NeptuneGraph) -> None:
 def e2e_graph_seed_url(url: str | None, e2e: bool) -> str | None:
     """Swap the graph cypher dump for its small `-e2e` variant.
 
-    cfg.e2e=true deployments seed graph from `graph-neo4j-e2e.cypher.gz`
-    — 153 nodes, ~40s — so the customer seed path runs fast +
-    deterministic in CI without the 96MB / one-mega-tx restore.
-    Production (e2e=false) keeps the full artifact. Only graph has an
-    e2e fixture today; the 25MB vector dump restores full either way.
+    The versioned scoped seed has a matching `-e2e.cypher.gz` artifact.
+    Both contain the complete small relationship graph, exercising the same
+    restore path in CI. Vector artifacts remain unchanged.
     """
     if url is None or not e2e:
         return url

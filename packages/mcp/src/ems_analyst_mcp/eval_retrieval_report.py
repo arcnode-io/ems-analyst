@@ -7,6 +7,8 @@ render function, no network calls) for symmetry within the monorepo.
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from .eval_golden_cases import QueryShape
+
 
 @dataclass
 class QueryResult:
@@ -28,6 +30,8 @@ class QueryResult:
     reciprocal_rank: float
     recall_at_5: float
     scorable: bool
+    query_shape: QueryShape = "flat_lookup"
+    required_evidence_coverage: float | None = None
 
 
 @dataclass
@@ -65,14 +69,29 @@ def render_report(report: RetrievalEvalReport) -> str:
         "",
         "## In-corpus queries",
         "",
-        "| Category | Query | Expected | Top-1 | RR | Recall@5 |",
-        "|---|---|---|---|---:|---:|",
+        "| Shape | Category | Query | Expected | Top-1 | RR | Recall@5 | Required evidence@10 |",
+        "|---|---|---|---|---|---:|---:|---:|",
     ]
     lines.extend(
-        f"| {r.category} | {r.name} | {','.join(r.expected_chunk_ids)} "
-        f"| {r.top1_id or '—'} | {r.reciprocal_rank:.2f} | {r.recall_at_5:.0f} |"
+        f"| {r.query_shape} | {r.category} | {r.name} | {','.join(r.expected_chunk_ids)} "
+        f"| {r.top1_id or '—'} | {r.reciprocal_rank:.2f} | {r.recall_at_5:.0f} "
+        f"| {_fmt_coverage(r.required_evidence_coverage)} |"
         for r in report.scorable_results
     )
+    lines += [
+        "",
+        "## By query shape (ADR-026)",
+        "",
+        "| Query shape | N | MRR | Recall@5 |",
+        "|---|---:|---:|---:|",
+    ]
+    for shape in sorted({r.query_shape for r in report.scorable_results}):
+        rows = [r for r in report.scorable_results if r.query_shape == shape]
+        lines.append(
+            f"| {shape} | {len(rows)} | "
+            f"{sum(r.reciprocal_rank for r in rows) / len(rows):.3f} | "
+            f"{sum(r.recall_at_5 for r in rows) / len(rows):.0%} |"
+        )
     lines += [
         "",
         "## Out-of-corpus queries (not yet scorable — see handoff §1)",
@@ -94,3 +113,8 @@ def render_report(report: RetrievalEvalReport) -> str:
 def _fmt_score(score: float | None) -> str:
     """5-decimal score, or an em-dash for a query with no results at all."""
     return f"{score:.5f}" if score is not None else "—"
+
+
+def _fmt_coverage(value: float | None) -> str:
+    """Flat lookups have no multi-hop coverage requirement."""
+    return f"{value:.0%}" if value is not None else "—"

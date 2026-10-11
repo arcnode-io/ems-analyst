@@ -26,10 +26,12 @@ def create_server(config: Optional[Config] = None) -> FastMCP:
 
     @mcp.tool()
     async def search_knowledge(query: str, limit: int = 10) -> SearchResults:
-        """Search factual knowledge in the Graphiti knowledge graph.
+        """Search relationships in the scoped knowledge graph (ADR-026).
 
-        USE WHEN: You need verified facts, entities, relationships, or structured
-        knowledge. Combines semantic search, BM25, and graph traversal.
+        USE WHEN: Cross-document standard supersession, or multi-hop BESS
+        chapter-5 control/incident chains. Use rag_search for self-contained
+        lookups, including protocol fields, function codes, and numeric specs.
+        Returns evidence, not a guarantee that a claim is true.
         """
         client = GraphitiClient.from_config(server_config)
         try:
@@ -40,9 +42,11 @@ def create_server(config: Optional[Config] = None) -> FastMCP:
 
     @mcp.tool()
     async def rag_search(query: str, limit: int = 10) -> list[Document]:
-        """Search documents using vector similarity for context.
+        """Search the complete markdown corpus using vector + lexical retrieval.
 
-        USE WHEN: You need detailed context, explanations, or source documents.
+        USE WHEN: Self-contained spec lookups, protocol fields/function codes,
+        numeric facts, explanations, and supporting source passages.
+        This is the default retrieval path for most domain questions.
         The query string is embedded internally; no pre-computed vector needed.
         """
         client = RAGClient.from_env(embedder=embedder)
@@ -52,8 +56,9 @@ def create_server(config: Optional[Config] = None) -> FastMCP:
     async def verify_fact(statement: str, limit: int = 5) -> FactEvidence:
         """Retrieve knowledge-graph evidence relevant to a statement.
 
-        USE WHEN: You want to check a claim against the graph. Returns related
-        facts; the caller judges whether they support or contradict the statement.
+        USE WHEN: Checking a cross-document supersession or BESS chapter-5
+        control/incident-chain claim. Use rag_search to check other claims.
+        Returns related facts; judge whether they support the statement.
         No boolean verdict — entailment is the caller's job.
         """
         client = GraphitiClient.from_config(server_config)
@@ -67,7 +72,8 @@ def create_server(config: Optional[Config] = None) -> FastMCP:
     async def combined_search(query: str, limit: int = 10) -> CombinedResults:
         """Search both the knowledge graph and document vectors.
 
-        USE WHEN: You need both structured facts and supporting context.
+        USE WHEN: A standard-supersession or BESS control/incident-chain question
+        also needs source context. Use rag_search alone for flat spec lookups.
         """
         graph_client = GraphitiClient.from_config(server_config)
         rag_client = RAGClient.from_env(embedder=embedder)
@@ -90,11 +96,11 @@ def create_server(config: Optional[Config] = None) -> FastMCP:
         return """
         HOW TO USE THIS KNOWLEDGE BASE EFFECTIVELY:
 
-        Step 1: ALWAYS verify facts before stating them — call verify_fact
-                and judge the returned evidence yourself.
-        Step 2: Use search_knowledge for entities and relationships.
-        Step 3: Use rag_search for detailed explanations.
-        Step 4: Combine results for complete answers.
+        Step 1: Ground every claim in retrieved evidence.
+        Step 2: Use rag_search for self-contained lookups and source passages.
+        Step 3: Use search_knowledge / verify_fact for cross-document standard
+                supersession and multi-hop BESS chapter-5 control/incident chains.
+        Step 4: Use combined_search when those graph questions also need context.
         Step 5: Cite your sources clearly: [Graph] or [Documents].
         Step 6: If evidence is absent or weak, say so — do not guess.
         """
@@ -105,17 +111,17 @@ def create_server(config: Optional[Config] = None) -> FastMCP:
         return """
         EXAMPLE USAGE PATTERNS:
 
-        1. "What is the relationship between X and Y?"
-           → search_knowledge("X Y relationship")
+        1. "What replaced CIP-006-7?"
+           → search_knowledge("CIP-006-7 superseded by")
 
-        2. "Explain how Z works"
-           → search_knowledge("Z") + rag_search("how Z works")
+        2. "What Modbus function code implements Mask Write Register?"
+           → rag_search("Modbus Mask Write Register function code")
 
-        3. "Is it true that <claim>?"
-           → verify_fact("<claim>"), then judge evidence
+        3. "How do BMS, EMS, PPC/SCADA, and fleet controls coordinate?"
+           → combined_search("BESS BMS EMS PPC SCADA fleet control hierarchy")
 
-        4. Complex question needing both facts and context:
-           → combined_search(query)
+        4. "Did limited telemetry contribute to the Victorian Big Battery fire?"
+           → verify_fact("Victorian Big Battery commissioning telemetry fire")
         """
 
     @mcp.prompt("answer_with_verification")
@@ -125,9 +131,10 @@ def create_server(config: Optional[Config] = None) -> FastMCP:
         To answer any question accurately:
 
         1. IDENTIFY key entities and claims.
-        2. For each claim call verify_fact() and inspect the evidence.
-        3. Use search_knowledge() for structured facts.
-        4. Use rag_search() for supporting documents.
+        2. Use rag_search() for flat lookups and supporting source passages.
+        3. Use search_knowledge() / verify_fact() for cross-document supersession
+           or BESS chapter-5 control/incident chains, and inspect the evidence.
+        4. Use combined_search() when those graph questions also need documents.
         5. SYNTHESIZE with citations [Graph] or [Documents].
         6. State clearly when evidence is missing rather than guessing.
         """
