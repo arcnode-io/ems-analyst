@@ -151,6 +151,36 @@ class TestInScopeWithContext:
         assert result is False
         assert embedder.calls == ["off-topic"]
 
+    async def test_off_topic_query_does_not_ride_on_a_strong_prior_reply(self) -> None:
+        # Arrange — regression: "pizza toppings" got through live because
+        # a strong in-domain last reply pulled the BLENDED text above the
+        # old equal threshold (0.48), even though the query itself is
+        # pure noise. Combined vector lands at cos≈0.55 — passes the old
+        # threshold, must fail the production (tightened) default.
+        embedder = _FakeEmbedder(
+            {
+                "what are popular pizza toppings?": [0.0, 1.0, 0.0],
+                "DAM price forecast for HB_NORTH what are popular pizza toppings?": [
+                    0.55,
+                    0.835,
+                    0.0,
+                ],
+            }
+        )
+        f = ScopeFilter(embedder)  # production defaults, not a test-tuned threshold
+        f._anchors = [[1.0, 0.0, 0.0]]
+        history: list[ModelRequest | ModelResponse] = [
+            ModelResponse(parts=[TextPart(content="DAM price forecast for HB_NORTH")])
+        ]
+
+        # Act
+        result = await f.in_scope(
+            "what are popular pizza toppings?", message_history=history
+        )
+
+        # Assert — off-topic stays rejected even with strong context to ride on
+        assert result is False
+
     async def test_last_response_with_no_text_part_skips_the_retry(self) -> None:
         # Arrange — most recent assistant turn was pure tool-call, no prose
         embedder = _FakeEmbedder({"off-topic": [0.0, 1.0, 0.0]})

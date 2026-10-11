@@ -15,11 +15,17 @@ below the lowest in-domain score observed (0.53).
 A bare query that fails gets one retry with the last assistant reply
 folded in — a short follow-up ("show me this as a table") often has no
 domain vocabulary of its own but is clearly in-scope given what was
-just discussed. _CONTEXT_THRESHOLD reuses _DEFAULT_THRESHOLD rather
-than a separately-probed number: unlike the single-message threshold,
-it hasn't been validated against real off-domain traffic on this
-longer input shape yet — tune it with real probe data before trusting
-it the way _DEFAULT_THRESHOLD is trusted.
+just discussed. Caught live (2026-10-11): an equal threshold let a
+genuinely off-domain query ("what are popular pizza toppings?") ride
+through on a strong in-domain prior reply — blending pulls the combined
+embedding toward whichever side is more semantically dense, not
+necessarily toward relevance. _CONTEXT_THRESHOLD is deliberately set
+above _DEFAULT_THRESHOLD's single-message in-domain floor (0.53) to
+compensate: the blended text has to look at least as domain-focused as
+a real on-topic message would, not just limp past the bare-query bar.
+Still not independently probed against real traffic on this longer
+input shape — tune it with real data before trusting it the way
+_DEFAULT_THRESHOLD is trusted; err toward stricter until then.
 """
 
 from __future__ import annotations
@@ -61,8 +67,9 @@ _ANCHORS: tuple[str, ...] = (
 # Empirically tuned against qwen3-embedding:4b — see module docstring.
 _DEFAULT_THRESHOLD: float = 0.48
 
-# See module docstring — not yet independently probed.
-_CONTEXT_THRESHOLD: float = _DEFAULT_THRESHOLD
+# See module docstring — deliberately stricter than _DEFAULT_THRESHOLD,
+# not yet independently probed.
+_CONTEXT_THRESHOLD: float = 0.60
 
 
 class ScopeFilter:
