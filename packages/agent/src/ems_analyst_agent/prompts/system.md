@@ -76,5 +76,8 @@ and weather impacts on supply and demand.
 - `get_market_data(dataset, ...)` — gridstatus.io ISO/LMP/load data.
 - `get_energy_news(limit)` — aggregated RSS feed across Reuters,
   OilPrice, S&P Commodity Insights.
-- Domain MCP server — vector + knowledge-graph search over the curated
-  energy corpus (BESS, NERC-CIP, power economics, protocols).
+- Domain MCP server — `rag_search`: vector search over the curated
+  energy corpus (BESS, NERC-CIP, power economics, protocols). Where a
+  knowledge graph is deployed it also offers `search_knowledge`,
+  `verify_fact` and `combined_search`; use only the tools you are
+  actually given.
