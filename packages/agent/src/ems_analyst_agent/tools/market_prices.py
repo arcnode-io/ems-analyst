@@ -116,7 +116,9 @@ async def _fetch_payload(
         return resp.json()
 
 
-def _synthetic_points(anchor: datetime, n_rows: int, seed_key: str) -> list[MarketPricePoint]:
+def _synthetic_points(
+    anchor: datetime, n_rows: int, seed_key: str
+) -> list[MarketPricePoint]:
     """Deterministic plausible price points, hourly, ending at `anchor`.
 
     Seeded by seed_key — same inputs produce the same numbers so a
@@ -172,7 +174,9 @@ async def fetch_market_series(
         httpx.RequestError: network failure.
     """
     try:
-        payload = await _fetch_payload(dataset, iso_z(start), iso_z(end), limit, location)
+        payload = await _fetch_payload(
+            dataset, iso_z(start), iso_z(end), limit, location
+        )
     except _GridstatusUnavailableError:
         hours = max(int((end - start).total_seconds() // 3600) + 1, 1)
         anchor = end.replace(minute=0, second=0, microsecond=0, tzinfo=UTC)
@@ -180,6 +184,8 @@ async def fetch_market_series(
         return _synthetic_points(anchor, hours, seed_key)
     rows = payload.get("data", [])
     return [
-        MarketPricePoint(ts=datetime.fromisoformat(row[ts_column]), value=float(row[value_column]))
+        MarketPricePoint(
+            ts=datetime.fromisoformat(row[ts_column]), value=float(row[value_column])
+        )
         for row in rows
     ]

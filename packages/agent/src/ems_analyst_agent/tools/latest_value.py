@@ -54,10 +54,20 @@ def _is_number(value: object) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
+def _numeric_readings(values: list[LatestValue]) -> list[tuple[float, str]] | None:
+    """(value, device) pairs when EVERY reading is a number, else None."""
+    out: list[tuple[float, str]] = []
+    for v in values:
+        if isinstance(v.value, bool) or not isinstance(v.value, (int, float)):
+            return None
+        out.append((float(v.value), v.device_id))
+    return out
+
+
 def _stats(values: list[LatestValue]) -> str:
     """avg/min/max (naming the devices) for numbers, else counts per value."""
-    if all(_is_number(v.value) for v in values):
-        nums = [(float(v.value), v.device_id) for v in values]  # ty: ignore[invalid-argument-type]
+    nums = _numeric_readings(values)
+    if nums is not None:
         lo, hi = min(nums), max(nums)
         avg = sum(n for n, _ in nums) / len(nums)
         return f"avg {avg:.1f}, min {lo[0]:.1f} ({lo[1]}), max {hi[0]:.1f} ({hi[1]})"

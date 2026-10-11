@@ -188,7 +188,9 @@ class TestInScopeWithContext:
         f._anchors = [[1.0, 0.0, 0.0]]
         history: list[ModelRequest | ModelResponse] = [
             ModelResponse(
-                parts=[ToolCallPart(tool_name="get_forecast", args={}, tool_call_id="1")]
+                parts=[
+                    ToolCallPart(tool_name="get_forecast", args={}, tool_call_id="1")
+                ]
             )
         ]
 

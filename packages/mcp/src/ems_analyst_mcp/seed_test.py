@@ -22,7 +22,9 @@ class _FakeHttpResponse:
         self._body = body
         self._pos = 0
         self.headers = (
-            {"Content-Length": str(content_length)} if content_length is not None else {}
+            {"Content-Length": str(content_length)}
+            if content_length is not None
+            else {}
         )
 
     def read(self, n: int | None = None) -> bytes:
@@ -70,7 +72,9 @@ class TestDownloadWithProgress:
             _download_with_progress("https://example.invalid/x.gz", "graph")
 
         # Assert — 10 progress lines, each naming the label + a rising percentage
-        progress_lines = [r.message for r in caplog.records if "seed progress:" in r.message]
+        progress_lines = [
+            r.message for r in caplog.records if "seed progress:" in r.message
+        ]
         assert len(progress_lines) == 10
         assert progress_lines[0] == "seed progress: graph 10% (1 MiB of 10 MiB)"
         assert progress_lines[-1] == "seed progress: graph 100% (10 MiB of 10 MiB)"
@@ -96,7 +100,9 @@ class TestDownloadWithProgress:
             )
 
         # Assert — 100 progress lines, one per percent
-        progress_lines = [r.message for r in caplog.records if "seed progress:" in r.message]
+        progress_lines = [
+            r.message for r in caplog.records if "seed progress:" in r.message
+        ]
         assert len(progress_lines) == 100
         assert "1%" in progress_lines[0]
         assert "100%" in progress_lines[-1]
