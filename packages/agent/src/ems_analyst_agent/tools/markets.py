@@ -12,12 +12,13 @@ and is shared with fetch_market_series (the typed counterpart used by
 compare_forecast_to_actual) — this module only turns that into text.
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Final
 
 import httpx
 from pydantic import BaseModel
 
+from ..isotime import iso_z
 from .market_prices import GRIDSTATUS_BASE_URL as GRIDSTATUS_BASE_URL
 from .market_prices import _fetch_payload, _GridstatusUnavailableError, _InvalidApiKeyError, _synthetic_points
 
@@ -52,7 +53,9 @@ async def get_market_data(
             'caiso_load', 'pjm_lmp_by_pnode', 'isone_real_time_lmp',
             'ercot_spp_day_ahead_hourly'. Full catalog:
             https://www.gridstatus.io/datasets.
-        start: ISO-8601 start, e.g. '2026-05-15T00:00:00Z'. None = latest.
+        start: ISO-8601 start, e.g. '2026-05-15T00:00:00Z'. None = the
+            last 24 hours — unbounded, gridstatus returns rows ascending
+            from the dataset's BEGINNING (2010 for ERCOT), not the latest.
         end: ISO-8601 end. None = open-ended.
         limit: Row cap. Default 25 keeps responses LLM-context friendly.
         location: Exact value of the dataset's `location` column, e.g.
@@ -70,6 +73,16 @@ async def get_market_data(
     Raises:
         ValueError: GRIDSTATUS_API_KEY env var missing.
     """
+    if start is None:
+        # Reason: without a floor gridstatus serves the dataset's oldest
+        # rows (2010 for ERCOT) — caught live when the model presented
+        # them as current prices. Rounded to the hour so the synthetic
+        # fallback's seed (which includes start) stays stable on retries
+        # within a turn.
+        floor = (datetime.now(UTC) - timedelta(hours=24)).replace(
+            minute=0, second=0, microsecond=0
+        )
+        start = iso_z(floor)
     try:
         payload = await _fetch_payload(dataset, start, end, limit, location)
     except _InvalidApiKeyError:

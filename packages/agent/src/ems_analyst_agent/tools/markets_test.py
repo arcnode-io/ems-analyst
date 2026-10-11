@@ -239,3 +239,24 @@ class TestHttpStatusMapping:
         # Assert
         assert "SYNTHETIC" not in actual
         assert "HB_NORTH" in actual
+
+    @pytest.mark.asyncio
+    async def test_no_start_defaults_to_a_recent_window(self) -> None:
+        """start=None must still send a start_time to gridstatus.
+
+        Unbounded, gridstatus returns rows ascending from the dataset's
+        beginning — 2010 for ERCOT — which the docstring's "None = latest"
+        promise silently contradicted (caught live: the model showed the
+        user 2010 prices as "current market data").
+        """
+        # Arrange — mock only matches when start_time is actually sent;
+        # an unbounded request leaves it unmatched and fails the call.
+        pook.get(
+            f"{GRIDSTATUS_BASE_URL}/datasets/ercot_spp_day_ahead_hourly/query"
+        ).param_exists("start_time").reply(200).json({"data": []})
+
+        # Act
+        actual = await get_market_data(dataset="ercot_spp_day_ahead_hourly")
+
+        # Assert — request carried a recent floor, not the dataset's origin
+        assert "no rows returned" in actual
