@@ -2,7 +2,6 @@ stages:
   - check
   - aggregate
   - publish
-  - deploy
   - mirror
 
 # Per-package job template. Each concrete job sets PKG=mcp|agent|server;
@@ -84,13 +83,6 @@ publish:
   # of pulling anonymously. after_script runs even when the push fails.
   after_script:
     - docker logout public.ecr.aws
-
-deploy:
-  stage: deploy
-  only: [main]
-  needs: [aggregate-coverage]
-  script:
-    - cd /home/admin/arcnode/ems-analyst && git pull --ff-only && cd /home/admin/docker/ems-analyst-server && docker compose up -d --build --force-recreate
 
 mirror:
   stage: mirror
