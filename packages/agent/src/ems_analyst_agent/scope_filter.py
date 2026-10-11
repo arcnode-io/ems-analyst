@@ -11,6 +11,15 @@ endpoint (2026-09-04): off-domain queries ("implement fibonacci",
 "capital of France") scored 0.25-0.45 against the original anchor
 set — 0.30 let them through. 0.48 sits above that noise floor and
 below the lowest in-domain score observed (0.53).
+
+A bare query that fails gets one retry with the last assistant reply
+folded in — a short follow-up ("show me this as a table") often has no
+domain vocabulary of its own but is clearly in-scope given what was
+just discussed. _CONTEXT_THRESHOLD reuses _DEFAULT_THRESHOLD rather
+than a separately-probed number: unlike the single-message threshold,
+it hasn't been validated against real off-domain traffic on this
+longer input shape yet — tune it with real probe data before trusting
+it the way _DEFAULT_THRESHOLD is trusted.
 """
 
 from __future__ import annotations
@@ -19,6 +28,7 @@ import asyncio
 import math
 
 from ems_analyst_mcp.clients import Embedder
+from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
 
 # 20 prompts spanning the agent's intended scope. Embedded once at
 # first in_scope call; max cosine vs the query embedding >= threshold
@@ -51,15 +61,22 @@ _ANCHORS: tuple[str, ...] = (
 # Empirically tuned against qwen3-embedding:4b — see module docstring.
 _DEFAULT_THRESHOLD: float = 0.48
 
+# See module docstring — not yet independently probed.
+_CONTEXT_THRESHOLD: float = _DEFAULT_THRESHOLD
+
 
 class ScopeFilter:
     """Cosine-similarity gate against in-domain anchor embeddings."""
 
     def __init__(
-        self, embedder: Embedder, threshold: float = _DEFAULT_THRESHOLD
+        self,
+        embedder: Embedder,
+        threshold: float = _DEFAULT_THRESHOLD,
+        context_threshold: float = _CONTEXT_THRESHOLD,
     ) -> None:
         self._embedder = embedder
         self._threshold = threshold
+        self._context_threshold = context_threshold
         self._anchors: list[list[float]] | None = None
 
     async def _ensure_anchors(self) -> None:
@@ -69,12 +86,45 @@ class ScopeFilter:
                 await asyncio.gather(*(self._embedder.embed(a) for a in _ANCHORS))
             )
 
-    async def in_scope(self, query: str) -> bool:
-        """True if any anchor's cosine similarity to query >= threshold."""
+    async def _max_cosine(self, text: str) -> float:
+        """Embed `text`, return its highest cosine similarity against any anchor."""
+        assert self._anchors is not None  # for ty — _ensure_anchors already ran
+        vec = await self._embedder.embed(text)
+        return max(_cosine(vec, a) for a in self._anchors)
+
+    async def in_scope(
+        self, query: str, message_history: list[ModelMessage] | None = None
+    ) -> bool:
+        """True if `query` alone, or `query` with recent context, scores in-domain.
+
+        Fast path (today's cost, unchanged): the bare query alone. Only a
+        failing bare query pays for a second embed call — and only when
+        there's a prior assistant reply to fold in; a fresh first message
+        has nothing to retry with.
+        """
         await self._ensure_anchors()
-        q = await self._embedder.embed(query)
-        assert self._anchors is not None  # for ty
-        return max(_cosine(q, a) for a in self._anchors) >= self._threshold
+        if await self._max_cosine(query) >= self._threshold:
+            return True
+        last_reply = _last_assistant_text(message_history) if message_history else None
+        if not last_reply:
+            return False
+        return await self._max_cosine(f"{last_reply} {query}") >= self._context_threshold
+
+
+def _last_assistant_text(history: list[ModelMessage]) -> str | None:
+    """Text from the most recent assistant turn's TextPart(s), if any.
+
+    Walks backward since the last entry isn't always a ModelResponse
+    (and a tool-call-only response carries no TextPart at all) — skip
+    past those rather than treating "no text here" as "no context at all".
+    """
+    for msg in reversed(history):
+        if not isinstance(msg, ModelResponse):
+            continue
+        texts = [p.content for p in msg.parts if isinstance(p, TextPart)]
+        if texts:
+            return " ".join(texts)
+    return None
 
 
 def _cosine(a: list[float], b: list[float]) -> float:

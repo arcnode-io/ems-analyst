@@ -108,7 +108,7 @@ async def run_turn_stream(
 
     `seq` pairs a start with its end.
     """
-    if not await _get_scope_filter(deps).in_scope(prompt):
+    if not await _get_scope_filter(deps).in_scope(prompt, message_history):
         log.info("scope filter rejected query (no LLM call)")
         yield "result", out_of_scope_result()
         return
