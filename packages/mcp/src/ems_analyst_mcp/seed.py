@@ -82,10 +82,48 @@ _NEPTUNE_LOAD_DONE_STATES = {
 }
 
 
-def _fetch_gunzip(url: str) -> str:
-    """Fetch + gunzip a public S3 .gz artifact, return decoded text."""
+_BYTES_PER_MIB: Final[int] = 1024 * 1024
+# Chunk size for _download_with_progress reads — also the progress
+# granularity floor (a file smaller than this still gets a 100% line).
+_PROGRESS_CHUNK_BYTES: Final[int] = _BYTES_PER_MIB
+
+
+def _download_with_progress(url: str, label: str) -> bytes:
+    """Fetch `url` in chunks, logging 'seed progress: {label} N% (…)' every 10%.
+
+    The vector + graph downloads take minutes with nothing printed between
+    the start and finish log lines — this gives the on-prem wizard page
+    something to read progress off of (see platform-engineer's handoff).
+
+    No Content-Length header -> can't compute a percentage; falls back to
+    one plain read with no progress logging (still returns the full body).
+    """
     with urllib.request.urlopen(url) as resp:  # nosec B310  # noqa: S310
-        return gzip.decompress(resp.read()).decode()
+        total = int(resp.headers.get("Content-Length") or 0)
+        if not total:
+            return resp.read()
+        chunks: list[bytes] = []
+        downloaded = 0
+        last_decile = 0
+        while chunk := resp.read(_PROGRESS_CHUNK_BYTES):
+            chunks.append(chunk)
+            downloaded += len(chunk)
+            decile = min(downloaded * 10 // total, 10)
+            if decile > last_decile:
+                last_decile = decile
+                logger.info(
+                    "seed progress: %s %d%% (%d MiB of %d MiB)",
+                    label,
+                    decile * 10,
+                    downloaded // _BYTES_PER_MIB,
+                    total // _BYTES_PER_MIB,
+                )
+        return b"".join(chunks)
+
+
+def _fetch_gunzip(url: str, label: str) -> str:
+    """Fetch + gunzip a public S3 .gz artifact, return decoded text."""
+    return gzip.decompress(_download_with_progress(url, label)).decode()
 
 
 async def _psql_apply(dump_url: str, conn_url: str) -> None:
@@ -100,8 +138,7 @@ async def _psql_apply(dump_url: str, conn_url: str) -> None:
     Requires `psql` binary in PATH — see consumer Dockerfile (must
     install postgresql-client alongside python).
     """
-    with urllib.request.urlopen(dump_url) as resp:  # nosec B310  # noqa: S310
-        sql = gzip.decompress(resp.read())
+    sql = gzip.decompress(_download_with_progress(dump_url, "vector"))
     proc = await asyncio.create_subprocess_exec(
         "psql",
         "-v",
@@ -324,7 +361,7 @@ async def seed_graph_neo4j(seed_url: str, e2e: bool = False) -> None:
         if not await _should_seed_graph(driver, e2e):
             return
         logger.info("seeding graph slice from %s", seed_url)
-        cypher_script = _fetch_gunzip(seed_url)
+        cypher_script = _fetch_gunzip(seed_url, "graph")
         statements = [s.strip() for s in cypher_script.split(";\n") if s.strip()]
 
         async with driver.session() as session:

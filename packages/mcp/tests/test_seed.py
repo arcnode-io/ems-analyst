@@ -83,8 +83,14 @@ def _vector_url(container: PostgresContainer) -> str:
 
 
 def _gzipped_response(body: str) -> io.BytesIO:
-    """Mimic urllib.request.urlopen() return — a context-managed BytesIO."""
-    return io.BytesIO(gzip.compress(body.encode()))
+    """Mimic urllib.request.urlopen() return — a context-managed BytesIO.
+
+    No `Content-Length` header -> _download_with_progress falls back to a
+    plain read; these tests care about the restore, not progress logging.
+    """
+    resp = io.BytesIO(gzip.compress(body.encode()))
+    resp.headers = {}  # ty: ignore[unresolved-attribute]
+    return resp
 
 
 @pytest_asyncio.fixture(autouse=True)
