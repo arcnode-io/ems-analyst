@@ -25,7 +25,7 @@ class TestLoadConfig:
         actual = load_config()
 
         # Assert
-        assert actual.host == IPv4Address("0.0.0.0")  # noqa: S104
+        assert actual.host.is_unspecified  # 0.0.0.0 — all interfaces
         assert actual.port == 8000
         assert actual.e2e is False
 
