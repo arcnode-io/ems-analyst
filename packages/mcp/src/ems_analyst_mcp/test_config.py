@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from .config import NeptuneGraph, NoneGraph, load_config_from
+from .config import NeptuneGraph, NoneGraph, OllamaSettings, load_config_from
 
 _DEFAULTS = """
 local:
@@ -86,4 +86,19 @@ def test_unknown_stage_falls_back_to_local(tmp_path: Path) -> None:
     # Act
     cfg = load_config_from(defaults, None, "ci")
     # Assert — got the local stage's graph backend
+    assert cfg.graph.backend == "none"
+
+
+def test_shipped_device_demo_stage_reaches_ollama_via_the_docker_host() -> None:
+    """The on-prem demo container sits on a bridge network, where the box's
+    own public IP doesn't loop back — the embedder (rag_search) timed out
+    until the launcher overlaid host.docker.internal. Bake it in, and keep
+    the stage graph-less so no graph tools are advertised."""
+    # Arrange
+    shipped = Path(__file__).parent / "cfg.defaults.yml"
+    # Act
+    cfg = load_config_from(shipped, None, "device-demo")
+    # Assert
+    assert isinstance(cfg.settings, OllamaSettings)
+    assert cfg.settings.ollama_base_url == "http://host.docker.internal:11434/v1"
     assert cfg.graph.backend == "none"

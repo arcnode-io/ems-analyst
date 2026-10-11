@@ -8,6 +8,7 @@ import pytest
 
 from ems_analyst_agent.config import (
     ErcotSettlementPoint,
+    OllamaSettings,
     _deep_merge,
     load_config,
 )
@@ -48,6 +49,22 @@ def test_load_config_resolves_device_demo_stage() -> None:
     # Assert
     assert cfg.site_id == "device_demo_site"
     assert cfg.settings.llm_provider == "ollama"
+
+
+def test_device_demo_stage_reaches_ollama_via_the_docker_host() -> None:
+    """The demo container is bridged: the box's public IP doesn't loop back
+    from inside it, so the scope filter's embeddings and the chat model
+    timed out until the launcher overlaid host.docker.internal. Bake it in."""
+    # Arrange
+    env = {k: v for k, v in os.environ.items() if k != "CFG_CUSTOMER_PATH"}
+    env["ENV"] = "device-demo"
+    with patch.dict(os.environ, env, clear=True):
+        # Act
+        cfg = load_config()
+
+    # Assert
+    assert isinstance(cfg.settings, OllamaSettings)
+    assert cfg.settings.ollama_base_url == "http://host.docker.internal:11434/v1"
 
 
 def test_load_config_customer_merges_market_block(tmp_path: Path) -> None:
