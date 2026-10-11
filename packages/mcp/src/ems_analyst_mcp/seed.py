@@ -88,12 +88,22 @@ _BYTES_PER_MIB: Final[int] = 1024 * 1024
 _PROGRESS_CHUNK_BYTES: Final[int] = _BYTES_PER_MIB
 
 
-def _download_with_progress(url: str, label: str) -> bytes:
-    """Fetch `url` in chunks, logging 'seed progress: {label} N% (…)' every 10%.
+_DEFAULT_PROGRESS_GRANULARITY_PCT: Final[int] = 10
+
+
+def _download_with_progress(
+    url: str,
+    label: str,
+    granularity_pct: int = _DEFAULT_PROGRESS_GRANULARITY_PCT,
+    chunk_bytes: int = _PROGRESS_CHUNK_BYTES,
+) -> bytes:
+    """Fetch `url` in chunks, logging 'seed progress: {label} N% (…)'.
 
     The vector + graph downloads take minutes with nothing printed between
     the start and finish log lines — this gives the on-prem wizard page
     something to read progress off of (see platform-engineer's handoff).
+    `granularity_pct` sets how often: 10 -> a line per decile, 1 -> a line
+    per percent (graph's seed is big enough to want the finer step).
 
     No Content-Length header -> can't compute a percentage; falls back to
     one plain read with no progress logging (still returns the full body).
@@ -104,26 +114,31 @@ def _download_with_progress(url: str, label: str) -> bytes:
             return resp.read()
         chunks: list[bytes] = []
         downloaded = 0
-        last_decile = 0
-        while chunk := resp.read(_PROGRESS_CHUNK_BYTES):
+        last_bucket = 0
+        while chunk := resp.read(chunk_bytes):
             chunks.append(chunk)
             downloaded += len(chunk)
-            decile = min(downloaded * 10 // total, 10)
-            if decile > last_decile:
-                last_decile = decile
+            pct = min(downloaded * 100 // total, 100)
+            bucket = pct - pct % granularity_pct
+            if bucket > last_bucket:
+                last_bucket = bucket
                 logger.info(
                     "seed progress: %s %d%% (%d MiB of %d MiB)",
                     label,
-                    decile * 10,
+                    bucket,
                     downloaded // _BYTES_PER_MIB,
                     total // _BYTES_PER_MIB,
                 )
         return b"".join(chunks)
 
 
-def _fetch_gunzip(url: str, label: str) -> str:
+def _fetch_gunzip(
+    url: str, label: str, granularity_pct: int = _DEFAULT_PROGRESS_GRANULARITY_PCT
+) -> str:
     """Fetch + gunzip a public S3 .gz artifact, return decoded text."""
-    return gzip.decompress(_download_with_progress(url, label)).decode()
+    return gzip.decompress(
+        _download_with_progress(url, label, granularity_pct=granularity_pct)
+    ).decode()
 
 
 async def _psql_apply(dump_url: str, conn_url: str) -> None:
@@ -361,7 +376,9 @@ async def seed_graph_neo4j(seed_url: str, e2e: bool = False) -> None:
         if not await _should_seed_graph(driver, e2e):
             return
         logger.info("seeding graph slice from %s", seed_url)
-        cypher_script = _fetch_gunzip(seed_url, "graph")
+        # Reason: graph's dump is big enough that the wizard wants the
+        # finer step — vector keeps the 10% default.
+        cypher_script = _fetch_gunzip(seed_url, "graph", granularity_pct=1)
         statements = [s.strip() for s in cypher_script.split(";\n") if s.strip()]
 
         async with driver.session() as session:

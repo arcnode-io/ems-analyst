@@ -75,6 +75,32 @@ class TestDownloadWithProgress:
         assert progress_lines[0] == "seed progress: graph 10% (1 MiB of 10 MiB)"
         assert progress_lines[-1] == "seed progress: graph 100% (10 MiB of 10 MiB)"
 
+    def test_logs_one_line_per_1pct_crossed_when_requested(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """granularity_pct=1 -> a line per 1%, not just per 10% (Joe's ask)."""
+        # Arrange — 100-byte body, 1-byte chunks -> crosses each of 100 percents
+        body = b"x" * 100
+        fake = _FakeHttpResponse(body, content_length=len(body))
+
+        # Act
+        with (
+            patch("ems_analyst_mcp.seed.urllib.request.urlopen", return_value=fake),
+            caplog.at_level(logging.INFO, logger="ems_analyst_mcp.seed"),
+        ):
+            _download_with_progress(
+                "https://example.invalid/x.gz",
+                "graph",
+                granularity_pct=1,
+                chunk_bytes=1,
+            )
+
+        # Assert — 100 progress lines, one per percent
+        progress_lines = [r.message for r in caplog.records if "seed progress:" in r.message]
+        assert len(progress_lines) == 100
+        assert "1%" in progress_lines[0]
+        assert "100%" in progress_lines[-1]
+
     def test_missing_content_length_skips_progress_but_still_returns_body(
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
