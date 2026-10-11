@@ -36,7 +36,8 @@ from .tools.telemetry_tools import (
 )
 from .tools.topology_tool import get_topology
 from .tools.weather_api import get_weather_forecast
-from .turn import AgentDeps, ChatTurnResult, run_turn_stream
+from .turn import AgentDeps, run_turn_stream
+from .turn_results import ChatTurnResult
 
 log = logging.getLogger(__name__)
 

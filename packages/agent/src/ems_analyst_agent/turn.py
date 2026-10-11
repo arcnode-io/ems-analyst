@@ -1,15 +1,20 @@
-"""Turn execution — drives the pydantic-ai agent and shapes the result.
+"""Turn execution — drives the pydantic-ai agent loop.
 
 `run_turn_stream` runs one turn via `agent.iter()`, yielding live tool
 events then a terminal `ChatTurnResult`. `lib.Agent` wraps it:
 `chat_turn_stream` exposes the generator, `chat_turn` drains it. The
 SSE endpoint consumes the generator directly.
+
+Result-shaping (what a turn's final message/artifacts look like, for
+both the normal and early-ending paths) lives in turn_results.py — this
+module is just the live loop + the scope-filter pre-gate.
 """
 
+import asyncio
 import logging
 import time
 from collections.abc import AsyncGenerator
-from dataclasses import dataclass
+from typing import Final
 
 from pydantic_ai import Agent as PydanticAgent, UsageLimits
 from pydantic_ai.exceptions import UsageLimitExceeded
@@ -24,6 +29,14 @@ from .memory import MemoryService
 from .schemas import AnalystArtifact, AnalystMessage
 from .scope_filter import ScopeFilter
 from .server_client import ServerClient
+from .turn_results import (
+    ChatTurnResult,
+    degraded_turn,
+    out_of_scope_result,
+    presentable,
+    public_trace,
+)
+from .turn_trace import DEFAULT_TOOL_LABEL, TOOL_LABELS, trace_entry
 
 log = logging.getLogger(__name__)
 
@@ -31,29 +44,11 @@ log = logging.getLogger(__name__)
 # Hitting it raises UsageLimitExceeded → the turn returns its partials.
 _TOOL_CALL_LIMIT: int = 10
 
-# Human-readable action shown in the HMI live-trace per tool call —
-# never raw args. Unknown tools fall back to _DEFAULT_TOOL_LABEL.
-_TOOL_LABELS: dict[str, str] = {
-    "describe_site": "Checking what data is queryable",
-    "get_topology": "Reading site topology",
-    "get_device_status": "Checking device status",
-    "explain_dispatch": "Correlating dispatch against price",
-    "query_timeseries": "Querying the site historian",
-    "get_forecast": "Pulling the published forecast",
-    "compare_forecast_to_actual": "Comparing forecast to actual price",
-    "query_markets": "Computing market revenue",
-    "query_energy_breakdown": "Computing the energy mix",
-    "get_weather_forecast": "Checking the weather",
-    "get_market_data": "Querying ERCOT market data",
-    "get_energy_news": "Scanning energy news",
-}
-_DEFAULT_TOOL_LABEL: str = "Searching the knowledge base"
-
-# Tools whose result carries a one-line headline worth surfacing in the
-# toolTrace `summary` — external-data tools only.
-_SUMMARY_TOOLS: frozenset[str] = frozenset(
-    {"get_energy_news", "get_market_data", "get_weather_forecast"}
-)
+# Backstop against the whole turn hanging (slow local-model generation,
+# e.g. a dual-GPU-split 26B model taking minutes on a long answer) — the
+# user otherwise sees nothing at all until they give up. 90s comfortably
+# covers every normal turn observed (3-50s) with margin.
+_TURN_TIMEOUT_SEC: Final[float] = 90.0
 
 
 class AgentDeps:
@@ -84,20 +79,6 @@ class AgentDeps:
         self.topology_cache: AnalystArtifact | None = None
 
 
-@dataclass
-class ChatTurnResult:
-    """One agent turn: HMI-facing AnalystMessage + raw pydantic-ai messages.
-
-    `message` is what the HMI renders. `new_messages` is the lossless
-    pydantic-ai trace an upstream store persists for replay. `status` is
-    the outcome — `ok`, `capped` (tool-call budget hit), or `error`.
-    """
-
-    message: AnalystMessage
-    new_messages: list[ModelMessage]
-    status: str = "ok"
-
-
 # Module-level singleton — anchors are embedded once on first in_scope
 # call and cached for the process lifetime. Lazy-init so test code that
 # doesn't exercise the gate doesn't trigger the 20-anchor embed batch.
@@ -110,24 +91,6 @@ def _get_scope_filter(deps: AgentDeps) -> ScopeFilter:
     if _scope_filter is None:
         _scope_filter = ScopeFilter(deps.memory_service.embedder)
     return _scope_filter
-
-
-_OUT_OF_SCOPE_TEXT: str = (
-    "I'm scoped to grid, markets, BESS, protocols, and weather/demand "
-    "topics — that question's outside my domain."
-)
-
-
-def _out_of_scope_result() -> ChatTurnResult:
-    """Synthetic terminal result for queries the pre-gate rejected."""
-    message = AnalystMessage.model_validate(
-        {
-            "role": "assistant",
-            "content": [{"type": "text", "text": _OUT_OF_SCOPE_TEXT}],
-            "toolTrace": [],
-        }
-    )
-    return ChatTurnResult(message=message, new_messages=[], status="out_of_scope")
 
 
 async def run_turn_stream(
@@ -147,18 +110,21 @@ async def run_turn_stream(
     """
     if not await _get_scope_filter(deps).in_scope(prompt):
         log.info("scope filter rejected query (no LLM call)")
-        yield "result", _out_of_scope_result()
+        yield "result", out_of_scope_result()
         return
     pending: dict[str, tuple[int, str, float]] = {}
     trace: list[dict[str, object]] = []
     seq = 0
     try:
-        async with agent.iter(
-            prompt,
-            deps=deps,
-            message_history=message_history,
-            usage_limits=UsageLimits(tool_calls_limit=_TOOL_CALL_LIMIT),
-        ) as run:
+        async with (
+            asyncio.timeout(_TURN_TIMEOUT_SEC),
+            agent.iter(
+                prompt,
+                deps=deps,
+                message_history=message_history,
+                usage_limits=UsageLimits(tool_calls_limit=_TOOL_CALL_LIMIT),
+            ) as run,
+        ):
             async for node in run:
                 if not PydanticAgent.is_call_tools_node(node):
                     continue
@@ -177,9 +143,7 @@ async def run_turn_stream(
                                 {
                                     "seq": seq,
                                     "tool": tool,
-                                    "label": _TOOL_LABELS.get(
-                                        tool, _DEFAULT_TOOL_LABEL
-                                    ),
+                                    "label": TOOL_LABELS.get(tool, DEFAULT_TOOL_LABEL),
                                 },
                             )
                         elif isinstance(event, FunctionToolResultEvent):
@@ -187,21 +151,21 @@ async def run_turn_stream(
                             if started is None:
                                 continue
                             eseq, tool, t0 = started
-                            entry = _trace_entry(tool, event, eseq, t0)
+                            entry = trace_entry(tool, event, eseq, t0)
                             trace.append(entry)
                             yield "tool_end", entry
             content: list[dict[str, object]] = [
                 {"type": "text", "text": str(run.result.output)},
                 *(
                     {"type": "artifact", "artifact": art.model_dump(by_alias=True)}
-                    for art in _presentable(deps.artifacts)
+                    for art in presentable(deps.artifacts)
                 ),
             ]
             message = AnalystMessage.model_validate(
                 {
                     "role": "assistant",
                     "content": content,
-                    "toolTrace": [_public_trace(t) for t in trace],
+                    "toolTrace": [public_trace(t) for t in trace],
                 }
             )
             yield (
@@ -215,97 +179,33 @@ async def run_turn_stream(
     except UsageLimitExceeded:
         # Model looped past the budget — surface partial artifacts.
         log.warning("tool-call limit hit; returning partial artifacts")
-        yield "result", _partial_turn(deps.artifacts, trace)
-
-
-def _presentable(artifacts: list[AnalystArtifact]) -> list[AnalystArtifact]:
-    """Trim the raw tool-artifact list to what the user should actually see.
-
-    Two passes: dedupe identical artifacts (a loopy turn repeats tool
-    calls), then drop `table` artifacts when a chart is present —
-    describe_site / get_topology tables are discovery scaffolding, not
-    the answer once a chart was produced.
-    """
-    seen: set[tuple[str, str]] = set()
-    deduped: list[AnalystArtifact] = []
-    for art in artifacts:
-        key = (art.kind, str(getattr(art.spec, "title", "")))
-        if key in seen:
-            continue
-        seen.add(key)
-        deduped.append(art)
-    has_chart = any(a.kind in ("line", "bar", "pie") for a in deduped)
-    if has_chart:
-        return [a for a in deduped if a.kind != "table"]
-    return deduped
-
-
-def _result_summary(tool: str, event: FunctionToolResultEvent) -> str | None:
-    """One-line headline from an external tool's result; None otherwise.
-
-    Only the external-data tools carry something headline-shaped — the
-    HMI intel feed surfaces it. First non-empty line, trimmed.
-    """
-    if tool not in _SUMMARY_TOOLS:
-        return None
-    text = str(getattr(event.part, "content", "")).strip()
-    if not text:
-        return None
-    return text.splitlines()[0].strip()[:140] or None
-
-
-def _trace_entry(
-    tool: str, event: FunctionToolResultEvent, seq: int, t0: float
-) -> dict[str, object]:
-    """Build a trace row from a completed tool call (carries stream `seq`)."""
-    outcome = "ok" if getattr(event.part, "part_kind", "") == "tool-return" else "error"
-    return {
-        "seq": seq,
-        "tool": tool,
-        "label": _TOOL_LABELS.get(tool, _DEFAULT_TOOL_LABEL),
-        "outcome": outcome,
-        "ms": int((time.perf_counter() - t0) * 1000),
-        "summary": _result_summary(tool, event),
-    }
-
-
-def _public_trace(entry: dict[str, object]) -> dict[str, object]:
-    """toolTrace row for the AnalystMessage — drops the stream-only `seq`."""
-    return {k: v for k, v in entry.items() if k != "seq"}
-
-
-def _partial_turn(
-    artifacts: list[AnalystArtifact], trace: list[dict[str, object]]
-) -> ChatTurnResult:
-    """Assemble a turn from artifacts gathered before the tool-call cap.
-
-    The model looped past its budget. Whatever charts it built are still
-    useful — keep the presentable set, drop error artifacts, surface the
-    rest with a brief note instead of a bare failure.
-    """
-    kept = [a for a in _presentable(artifacts) if a.kind != "error"]
-    note = (
-        "I ran long working through that — here's the data I gathered. "
-        "Ask a follow-up if you need more."
-        if kept
-        else "I couldn't finish that one — I ran out of tool budget before "
-        "reaching an answer. Try a narrower question."
-    )
-    content: list[dict[str, object]] = [
-        {"type": "text", "text": note},
-        *(
-            {"type": "artifact", "artifact": art.model_dump(by_alias=True)}
-            for art in kept
-        ),
-    ]
-    return ChatTurnResult(
-        message=AnalystMessage.model_validate(
-            {
-                "role": "assistant",
-                "content": content,
-                "toolTrace": [_public_trace(t) for t in trace],
-            }
-        ),
-        new_messages=[],
-        status="capped",
-    )
+        yield (
+            "result",
+            degraded_turn(
+                deps.artifacts,
+                trace,
+                status="capped",
+                note_with_data="I ran long working through that — here's the data "
+                "I gathered. Ask a follow-up if you need more.",
+                note_without_data="I couldn't finish that one — I ran out of tool "
+                "budget before reaching an answer. Try a narrower question.",
+            ),
+        )
+    except TimeoutError:
+        # Turn outran the wall-clock bound (e.g. slow local-model
+        # generation) — the caller otherwise waits forever for nothing.
+        log.warning(
+            "turn exceeded %.0fs; returning partial artifacts", _TURN_TIMEOUT_SEC
+        )
+        yield (
+            "result",
+            degraded_turn(
+                deps.artifacts,
+                trace,
+                status="timeout",
+                note_with_data="That took too long to finish — here's the data "
+                "I gathered. Ask a follow-up if you need more.",
+                note_without_data="That took too long to answer. Try a narrower "
+                "question, or try again in a moment.",
+            ),
+        )

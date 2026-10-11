@@ -1,64 +1,80 @@
-"""Unit tests for turn helpers — pure functions, no Agent / network."""
+"""Unit tests for run_turn_stream — the live pydantic-ai loop itself.
 
-from .schemas import AnalystArtifact
-from .turn import _presentable
+Pure-function helpers it calls into (presentable, degraded_turn, trace
+labeling) are tested where they live: turn_results_test.py, turn_trace
+has no non-trivial branches of its own to test.
+"""
 
-_TS = "2026-01-01T00:00:00Z"
+import asyncio
+from collections.abc import AsyncGenerator
+from unittest.mock import AsyncMock, Mock, patch
+
+import pytest
+from pydantic_ai import Agent as PydanticAgent
+from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
+from pydantic_ai.models.function import AgentInfo, FunctionModel
+
+from .device_api import DeviceApiClient
+from .memory import MemoryService
+from .schemas import TextContent
+from .server_client import ServerClient
+from .turn import AgentDeps, run_turn_stream
+from .turn_results import ChatTurnResult
 
 
-def _table(title: str) -> AnalystArtifact:
-    return AnalystArtifact.model_validate(
-        {
-            "kind": "table",
-            "spec": {"title": title, "columns": [], "rows": [], "dataAsOf": _TS},
-        }
+async def _drain(
+    gen: AsyncGenerator[tuple[str, object]],
+) -> ChatTurnResult:
+    """Fully drain run_turn_stream the way lib.Agent.chat_turn does."""
+    result: ChatTurnResult | None = None
+    async for name, payload in gen:
+        if name == "result":
+            assert isinstance(payload, ChatTurnResult)
+            result = payload
+    assert result is not None
+    return result
+
+
+def _deps() -> AgentDeps:
+    return AgentDeps(
+        memory_service=Mock(spec=MemoryService),
+        server=Mock(spec=ServerClient),
+        device_api=Mock(spec=DeviceApiClient),
     )
 
 
-def _line(title: str) -> AnalystArtifact:
-    return AnalystArtifact.model_validate(
-        {
-            "kind": "line",
-            "spec": {
-                "title": title,
-                "xAxis": {"label": "t", "kind": "time"},
-                "yAxis": {"label": "v", "unit": "x"},
-                "series": [],
-                "dataAsOf": _TS,
-            },
-        }
-    )
+class TestRunTurnStreamTimeout:
+    """AAA — a turn that outruns the wall-clock bound returns, doesn't hang."""
 
+    @pytest.mark.asyncio
+    async def test_slow_model_call_times_out_with_a_graceful_result(self) -> None:
+        # Arrange — model never responds inside the (patched, tiny) deadline
+        async def _never_responds(
+            _messages: list[ModelMessage], _info: AgentInfo
+        ) -> ModelResponse:
+            await asyncio.sleep(10)
+            return ModelResponse(parts=[TextPart(content="too late")])
 
-class TestPresentable:
-    """AAA — _presentable dedupes + drops scaffolding tables."""
-
-    def test_drops_discovery_tables_when_a_chart_exists(self) -> None:
-        # Arrange — agent used describe_site + get_topology, then charted
-        arts = [_table("Queryable measurements"), _table("Site topology"), _line("SoC")]
+        agent: PydanticAgent[AgentDeps] = PydanticAgent(
+            FunctionModel(_never_responds), deps_type=AgentDeps
+        )
+        fake_scope_filter = Mock()
+        fake_scope_filter.in_scope = AsyncMock(return_value=True)
 
         # Act
-        kept = _presentable(arts)
+        with (
+            patch(
+                "ems_analyst_agent.turn._get_scope_filter",
+                return_value=fake_scope_filter,
+            ),
+            patch("ems_analyst_agent.turn._TURN_TIMEOUT_SEC", 0.05),
+        ):
+            result = await _drain(
+                run_turn_stream(agent, _deps(), "how's the weather", None)
+            )
 
-        # Assert — only the chart the user asked for survives
-        assert [a.kind for a in kept] == ["line"]
-
-    def test_keeps_tables_when_no_chart(self) -> None:
-        # Arrange — a genuine "what's on site" turn, no chart produced
-        arts = [_table("Site topology")]
-
-        # Act
-        kept = _presentable(arts)
-
-        # Assert — the table is the answer here, keep it
-        assert [a.kind for a in kept] == ["table"]
-
-    def test_dedupes_repeated_artifacts(self) -> None:
-        # Arrange — a loopy turn re-ran the same query
-        arts = [_line("SoC"), _line("SoC"), _line("SoC")]
-
-        # Act
-        kept = _presentable(arts)
-
-        # Assert
-        assert len(kept) == 1
+        # Assert — a clean result comes back, the hang never reaches the caller
+        assert result.status == "timeout"
+        first = result.message.content[0]
+        assert isinstance(first, TextContent)
+        assert "took too long" in first.text.lower()
