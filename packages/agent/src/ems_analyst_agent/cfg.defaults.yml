@@ -38,7 +38,7 @@ beta:
     wholesale_market: ercot
     settlement_point: HB_NORTH
 
-device_demo:
+device-demo:
   # Real device-fleet telemetry (ems-industrial-gateway + friends) behind
   # analyst.arcnode.io, replacing the `demo` stage's CSV mock for
   # measurements/description. Distinct stage name on purpose — `demo` is

@@ -32,10 +32,10 @@ class TestLoadConfig:
     def test_unknown_env_still_falls_back_to_local(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """The legacy ENV=device_demo (underscore) keeps its host-network behavior."""
+        """An unrecognized ENV (e.g. ENV=ci in pipelines) lands on the local block."""
         # Arrange
         monkeypatch.chdir(_PACKAGE_DIR)
-        monkeypatch.setenv("ENV", "device_demo")
+        monkeypatch.setenv("ENV", "ci")
 
         # Act
         actual = load_config()

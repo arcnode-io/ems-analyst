@@ -28,16 +28,19 @@ def test_load_config_returns_baked_defaults_without_customer_file() -> None:
 
 
 def test_load_config_resolves_device_demo_stage() -> None:
-    """device_demo stage: the real device-fleet deployment's own site_id.
+    """device-demo stage: the real device-fleet deployment's own site_id.
 
     Distinct from `demo` (the CSV-mock trigger in app_module.py checks
     for the literal string "demo") — this stage exists so the real
     telemetry deployment has a proper named config rather than relying
-    on an unrecognized ENV value silently falling back to `local`.
+    on an unrecognized ENV value silently falling back to `local`. The
+    stage key is hyphenated because the demo launcher injects
+    ENV=device-demo for every EMS service; an underscore key silently
+    fell through to local (site_001) and every measurement came back empty.
     """
     # Arrange
     env = {k: v for k, v in os.environ.items() if k != "CFG_CUSTOMER_PATH"}
-    env["ENV"] = "device_demo"
+    env["ENV"] = "device-demo"
     with patch.dict(os.environ, env, clear=True):
         # Act
         cfg = load_config()

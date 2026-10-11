@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Annotated, Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai.models import Model
 from pydantic_ai.models.bedrock import BedrockConverseModel
 from pydantic_ai.models.openai import OpenAIChatModel
@@ -62,10 +62,14 @@ class StageConfig(BaseModel):
 
 
 class _ConfigMap(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     local: StageConfig
     demo: StageConfig
     beta: StageConfig
-    device_demo: StageConfig
+    # Reason: the demo launcher injects ENV=device-demo (hyphen) for every EMS
+    # service, so the cfg key has to match that string — hence the alias.
+    device_demo: StageConfig = Field(alias="device-demo")
 
 
 class Config(BaseModel):
@@ -99,7 +103,7 @@ def load_config() -> Config:
         "local": config_map.local,
         "demo": config_map.demo,
         "beta": config_map.beta,
-        "device_demo": config_map.device_demo,
+        "device-demo": config_map.device_demo,
     }.get(env, config_map.local)
     return Config(
         log_level=stage.log_level,
