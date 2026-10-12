@@ -12,6 +12,7 @@ import os
 import re
 import sys
 import time
+import tempfile
 from typing import TypedDict
 from pathlib import Path
 
@@ -171,11 +172,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", default="qwen3.6:27b")
     parser.add_argument("--base-url", default="http://173.211.12.43:11434/v1")
-    parser.add_argument(
-        "--output", type=Path, default=Path("/tmp/ems-domain-eval")  # noqa: S108
-    )
+    parser.add_argument("--output", type=Path)
     args = parser.parse_args()
-    asyncio.run(run(args.model, args.base_url, args.output))
+    output = args.output or Path(tempfile.mkdtemp(prefix="ems-domain-eval-"))
+    asyncio.run(run(args.model, args.base_url, output))
 
 
 if __name__ == "__main__":
