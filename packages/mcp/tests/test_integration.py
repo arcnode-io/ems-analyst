@@ -46,7 +46,7 @@ class TestGraphitiClient:
             content="test result",
             score=0.9,
         )
-        mock_graphiti.search.return_value = [mock_result]
+        mock_graphiti.search_.return_value = SimpleNamespace(edges=[mock_result])
 
         client = GraphitiClient(mock_graphiti)
 
@@ -57,9 +57,12 @@ class TestGraphitiClient:
         assert len(results) == 1
         assert results[0].id == "test"
         assert results[0].content == "test result"
-        mock_graphiti.search.assert_called_once_with(
-            query="test query", center_node_uuid=None
-        )
+        mock_graphiti.search_.assert_called_once()
+        search_args = mock_graphiti.search_.call_args.kwargs
+        assert search_args["query"] == "test query"
+        assert search_args["center_node_uuid"] is None
+        assert search_args["config"].limit == 10
+        mock_graphiti.search.assert_not_called()
 
 
 class TestRAGClient:
@@ -180,7 +183,8 @@ class TestMCPServer:
         search_tool = next(tool for tool in tools if tool.name == "search_knowledge")
         description = search_tool.description or ""
         assert "USE WHEN" in description
-        assert "verified facts" in description
+        assert "Cross-document standard supersession" in description
+        assert "rag_search" in description
 
     @pytest.mark.asyncio
     async def test_search_knowledge_tool_execution(self) -> None:
@@ -204,7 +208,7 @@ class TestMCPServer:
                 score=0.9,
             )
 
-            mock_graphiti.search.return_value = [mock_result]
+            mock_graphiti.search_.return_value = SimpleNamespace(edges=[mock_result])
 
             server = create_server(config=_test_config())
 
@@ -258,7 +262,9 @@ class TestMCPServer:
                 content_text = str(first_content)
 
         assert isinstance(content_text, str)
-        assert "ALWAYS verify facts" in content_text
+        assert "Ground every claim in retrieved evidence" in content_text
+        assert "rag_search for self-contained lookups" in content_text
+        assert "multi-hop BESS chapter-5" in content_text
         assert "Cite your sources" in content_text
 
     def test_create_server_with_explicit_config(self) -> None:
@@ -297,7 +303,7 @@ class TestMCPServer:
                 score=0.9,
             )
 
-            mock_graphiti.search.return_value = [mock_result]
+            mock_graphiti.search_.return_value = SimpleNamespace(edges=[mock_result])
 
             # Act
             server = create_server(config=test_config)
