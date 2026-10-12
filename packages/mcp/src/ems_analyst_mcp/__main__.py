@@ -34,7 +34,7 @@ async def _seed() -> None:
     """One-shot seed — runs to completion, writes markers, exits.
 
     cfg.e2e=true → seed graph from the small `-e2e` fixture (fast,
-    deterministic CI); false → the full production artifact.
+    deterministic CI); false → the scoped production artifact.
     """
     config = load_config()
     setup_logger(config)

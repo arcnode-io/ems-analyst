@@ -15,6 +15,7 @@ from graphiti_core.edges import EntityEdge
 from graphiti_core.embedder.client import EmbedderClient
 from graphiti_core.llm_client import LLMClient
 
+
 from ..config import (
     BedrockSettings,
     Config,
@@ -35,6 +36,8 @@ from .graphiti_ollama import (
     make_ollama_llm,
     make_ollama_reranker,
 )
+
+from .scoped_graph_search import search_scoped
 
 log = logging.getLogger(__name__)
 
@@ -155,14 +158,16 @@ class GraphitiClient:
     async def search(
         self, query: str, center_node_uuid: Optional[str] = None, limit: int = 10
     ) -> list[SearchResult]:
-        """Hybrid search combining semantic, BM25, and graph traversal.
+        """ADR-026 relationship retrieval using lexical search and graph traversal.
 
+        The compact graph has no embeddings: semantic retrieval belongs to
+        the complete markdown corpus. Build a request-local search config so
+        limits do not mutate Graphiti's shared recipe singleton.
         Raises the underlying Graphiti error on failure — no silent empty list.
         """
         try:
-            raw_results = await self.graphiti.search(
-                query=query,
-                center_node_uuid=center_node_uuid,
+            raw_results = await search_scoped(
+                self.graphiti, query, limit, center_node_uuid
             )
         except Exception:
             log.exception("graphiti search failed (query=%r)", query)

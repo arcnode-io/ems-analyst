@@ -1,0 +1,25 @@
+{
+  "scope": "adr026-v1",
+  "retrieval": "lexical_and_traversal",
+  "nodes": 184,
+  "facts": 256,
+  "relationships": 496,
+  "artifacts": {
+    "graph-neo4j-scoped-v1-e2e.cypher.gz": {
+      "bytes": 89134,
+      "sha256": "271733ece7fa2eb1fdc47419df0515e9cd9ee698a731067b532362b89096739c"
+    },
+    "graph-neo4j-scoped-v1.cypher.gz": {
+      "bytes": 89134,
+      "sha256": "271733ece7fa2eb1fdc47419df0515e9cd9ee698a731067b532362b89096739c"
+    },
+    "graph-neptune-scoped-v1/edges.csv": {
+      "bytes": 213484,
+      "sha256": "8d045ff39ca2c71f78cafab207e7fcc6e92da66abdcbb31e5e0a3a8dda40d13c"
+    },
+    "graph-neptune-scoped-v1/vertices.csv": {
+      "bytes": 165163,
+      "sha256": "8411904feb0275a888e11160ad482c0d2f13dce94fdd5e8eef8ae341fefaabe3"
+    }
+  }
+}

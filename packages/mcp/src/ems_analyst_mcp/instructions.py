@@ -21,11 +21,11 @@ def knowledge_instructions(graph: bool) -> str:
     return """
         HOW TO USE THIS KNOWLEDGE BASE EFFECTIVELY:
 
-        Step 1: ALWAYS verify facts before stating them — call verify_fact
-                and judge the returned evidence yourself.
-        Step 2: Use search_knowledge for entities and relationships.
-        Step 3: Use rag_search for detailed explanations.
-        Step 4: Combine results for complete answers.
+        Step 1: Ground every claim in retrieved evidence.
+        Step 2: Use rag_search for self-contained lookups and source passages.
+        Step 3: Use search_knowledge / verify_fact for cross-document standard
+                supersession and multi-hop BESS chapter-5 control/incident chains.
+        Step 4: Use combined_search when those graph questions also need context.
         Step 5: Cite your sources clearly: [Graph] or [Documents].
         Step 6: If evidence is absent or weak, say so — do not guess.
         """
@@ -46,17 +46,17 @@ def example_queries(graph: bool) -> str:
     return """
         EXAMPLE USAGE PATTERNS:
 
-        1. "What is the relationship between X and Y?"
-           → search_knowledge("X Y relationship")
+        1. "What replaced CIP-006-7?"
+           → search_knowledge("CIP-006-7 superseded by")
 
-        2. "Explain how Z works"
-           → search_knowledge("Z") + rag_search("how Z works")
+        2. "What Modbus function code implements Mask Write Register?"
+           → rag_search("Modbus Mask Write Register function code")
 
-        3. "Is it true that <claim>?"
-           → verify_fact("<claim>"), then judge evidence
+        3. "How do BMS, EMS, PPC/SCADA, and fleet controls coordinate?"
+           → combined_search("BESS BMS EMS PPC SCADA fleet control hierarchy")
 
-        4. Complex question needing both facts and context:
-           → combined_search(query)
+        4. "Did limited telemetry contribute to the Victorian Big Battery fire?"
+           → verify_fact("Victorian Big Battery commissioning telemetry fire")
         """
 
 
@@ -75,9 +75,10 @@ def verification_prompt(graph: bool) -> str:
         To answer any question accurately:
 
         1. IDENTIFY key entities and claims.
-        2. For each claim call verify_fact() and inspect the evidence.
-        3. Use search_knowledge() for structured facts.
-        4. Use rag_search() for supporting documents.
+        2. Use rag_search() for flat lookups and supporting source passages.
+        3. Use search_knowledge() / verify_fact() for cross-document supersession
+           or BESS chapter-5 control/incident chains, and inspect the evidence.
+        4. Use combined_search() when those graph questions also need documents.
         5. SYNTHESIZE with citations [Graph] or [Documents].
         6. State clearly when evidence is missing rather than guessing.
         """

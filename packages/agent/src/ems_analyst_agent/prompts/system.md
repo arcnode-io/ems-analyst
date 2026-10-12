@@ -76,8 +76,15 @@ and weather impacts on supply and demand.
 - `get_market_data(dataset, ...)` — gridstatus.io ISO/LMP/load data.
 - `get_energy_news(limit)` — aggregated RSS feed across Reuters,
   OilPrice, S&P Commodity Insights.
-- Domain MCP server — `rag_search`: vector search over the curated
-  energy corpus (BESS, NERC-CIP, power economics, protocols). Where a
-  knowledge graph is deployed it also offers `search_knowledge`,
-  `verify_fact` and `combined_search`; use only the tools you are
-  actually given.
+- Domain MCP server — vector + knowledge-graph search over the curated
+  energy corpus (BESS, NERC-CIP, power economics, protocols).
+  Use `rag_search` for self-contained spec lookups, protocol fields/function
+  codes, numeric facts, and source passages. The graph is scoped to
+  cross-document standard supersession and multi-hop BESS chapter-5
+  control/incident chains. For questions connecting BMS, EMS, PPC, SCADA,
+  fleet controls, or incident causes, you must retrieve graph evidence with
+  `search_knowledge` or `combined_search` before answering. Retrieve each
+  requested link and cite its returned evidence. Use `search_knowledge` or
+  `verify_fact` for standard supersession, and `combined_search` when source
+  context is also needed. Judge the evidence
+  yourself and say when it is insufficient.

@@ -26,10 +26,12 @@ def create_server(config: Optional[Config] = None) -> FastMCP:
     mcp = FastMCP("Knowledge Graph MCP Server")
 
     async def search_knowledge(query: str, limit: int = 10) -> SearchResults:
-        """Search factual knowledge in the Graphiti knowledge graph.
+        """Search relationships in the scoped knowledge graph (ADR-026).
 
-        USE WHEN: You need verified facts, entities, relationships, or structured
-        knowledge. Combines semantic search, BM25, and graph traversal.
+        USE WHEN: Cross-document standard supersession, or multi-hop BESS
+        chapter-5 control/incident chains. Use rag_search for self-contained
+        lookups, including protocol fields, function codes, and numeric specs.
+        Returns evidence, not a guarantee that a claim is true.
         """
         client = GraphitiClient.from_config(server_config)
         try:
@@ -39,9 +41,11 @@ def create_server(config: Optional[Config] = None) -> FastMCP:
             await client.close()
 
     async def rag_search(query: str, limit: int = 10) -> list[Document]:
-        """Search documents using vector similarity for context.
+        """Search the complete markdown corpus using vector + lexical retrieval.
 
-        USE WHEN: You need detailed context, explanations, or source documents.
+        USE WHEN: Self-contained spec lookups, protocol fields/function codes,
+        numeric facts, explanations, and supporting source passages.
+        This is the default retrieval path for most domain questions.
         The query string is embedded internally; no pre-computed vector needed.
         """
         client = RAGClient.from_env(embedder=embedder)
@@ -50,8 +54,9 @@ def create_server(config: Optional[Config] = None) -> FastMCP:
     async def verify_fact(statement: str, limit: int = 5) -> FactEvidence:
         """Retrieve knowledge-graph evidence relevant to a statement.
 
-        USE WHEN: You want to check a claim against the graph. Returns related
-        facts; the caller judges whether they support or contradict the statement.
+        USE WHEN: Checking a cross-document supersession or BESS chapter-5
+        control/incident-chain claim. Use rag_search to check other claims.
+        Returns related facts; judge whether they support the statement.
         No boolean verdict — entailment is the caller's job.
         """
         client = GraphitiClient.from_config(server_config)
@@ -64,7 +69,8 @@ def create_server(config: Optional[Config] = None) -> FastMCP:
     async def combined_search(query: str, limit: int = 10) -> CombinedResults:
         """Search both the knowledge graph and document vectors.
 
-        USE WHEN: You need both structured facts and supporting context.
+        USE WHEN: A standard-supersession or BESS control/incident-chain question
+        also needs source context. Use rag_search alone for flat spec lookups.
         """
         graph_client = GraphitiClient.from_config(server_config)
         rag_client = RAGClient.from_env(embedder=embedder)
