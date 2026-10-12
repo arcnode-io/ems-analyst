@@ -27,7 +27,14 @@ from pydantic_ai import RunContext
 from ..isotime import iso_z
 from ..schemas import AnalystArtifact, LineSpec
 from ..server_client import ServerClient
-from ._common import Render, _TelemetryDeps, _error_artifact, _fmt_window, _parse_window, _to_table
+from ._common import (
+    Render,
+    _TelemetryDeps,
+    _error_artifact,
+    _fmt_window,
+    _parse_window,
+    _to_table,
+)
 from .forecast_accuracy import ForecastAccuracyStats, compute_forecast_accuracy
 from .market_prices import fetch_market_series
 
@@ -62,13 +69,17 @@ async def build_compare_forecast(
         measurement=_FORECAST_MEASUREMENT, start=start, end=end
     )
     if not forecast_series.points:
-        return [
-            _error_artifact(
-                "not_found",
-                f"No {_FORECAST_MEASUREMENT} forecast over the last "
-                f"{_fmt_window(window)}.",
-            )
-        ], None, False
+        return (
+            [
+                _error_artifact(
+                    "not_found",
+                    f"No {_FORECAST_MEASUREMENT} forecast over the last "
+                    f"{_fmt_window(window)}.",
+                )
+            ],
+            None,
+            False,
+        )
     forecast = {p.forecast_for: p.value for p in forecast_series.points}
     hours = max(int(window.total_seconds() // 3600) + 2, 1)
     actual_points = await fetch_market_series(
@@ -84,13 +95,17 @@ async def build_compare_forecast(
     stats = compute_forecast_accuracy(forecast, actual)
     is_synthetic = any(p.is_synthetic for p in actual_points)
     if stats is None:
-        return [
-            _error_artifact(
-                "not_found",
-                f"Forecast and actual data don't overlap in the last "
-                f"{_fmt_window(window)}.",
-            )
-        ], None, is_synthetic
+        return (
+            [
+                _error_artifact(
+                    "not_found",
+                    f"Forecast and actual data don't overlap in the last "
+                    f"{_fmt_window(window)}.",
+                )
+            ],
+            None,
+            is_synthetic,
+        )
     note = (
         f"{stats.hours_compared}h compared, mean bias "
         f"${stats.mean_bias:+.2f}/MWh, MAE ${stats.mae:.2f}/MWh"

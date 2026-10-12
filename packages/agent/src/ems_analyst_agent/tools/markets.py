@@ -20,7 +20,12 @@ from pydantic import BaseModel
 
 from ..isotime import iso_z
 from .market_prices import GRIDSTATUS_BASE_URL as GRIDSTATUS_BASE_URL
-from .market_prices import _fetch_payload, _GridstatusUnavailableError, _InvalidApiKeyError, _synthetic_points
+from .market_prices import (
+    _fetch_payload,
+    _GridstatusUnavailableError,
+    _InvalidApiKeyError,
+    _synthetic_points,
+)
 
 DEFAULT_LIMIT: Final[int] = 25
 _SYNTHETIC_MARKER: Final[str] = (
@@ -91,7 +96,9 @@ async def get_market_data(
         # Reason: quota (403), unknown dataset (404), rate-limit (429) —
         # fall back so the agent can still answer with clearly-marked
         # synthetic rows.
-        return _synthetic_fallback(dataset, start, end, limit, e.status, location=location)
+        return _synthetic_fallback(
+            dataset, start, end, limit, e.status, location=location
+        )
     except httpx.HTTPStatusError as e:
         return f"Error querying {dataset}: HTTP {e.response.status_code}"
     except httpx.RequestError as e:
@@ -138,7 +145,8 @@ def _synthetic_fallback(
     n_rows = min(limit, _SYNTHETIC_MAX_ROWS)
     points = _synthetic_points(anchor, n_rows, seed_key)
     rows = [
-        _SyntheticRow(ts=p.ts.isoformat(), value=p.value, location=location) for p in points
+        _SyntheticRow(ts=p.ts.isoformat(), value=p.value, location=location)
+        for p in points
     ]
     header = f"{_SYNTHETIC_MARKER} (gridstatus HTTP {status})"
     payload: dict[str, Any] = {"data": [r.model_dump(exclude_none=True) for r in rows]}

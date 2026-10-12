@@ -12,6 +12,7 @@ on partial failure with clean rollback so retry succeeds.
 
 import gzip
 import io
+import logging
 import os
 from collections.abc import AsyncIterator
 from unittest.mock import patch
@@ -174,6 +175,47 @@ async def test_seed_graph_neo4j_loads_then_skips_on_rerun(
             assert row["c"] == 2
     finally:
         await driver.close()
+
+
+MIXED_CYPHER_SCRIPT = """
+CREATE CONSTRAINT foo_name IF NOT EXISTS FOR (n:Foo) REQUIRE n.name IS UNIQUE;
+CREATE (a:Foo {name: 'bar'});
+CREATE (b:Foo {name: 'baz'});
+""".strip()
+
+
+@pytest.mark.asyncio
+async def test_seed_graph_neo4j_logs_import_progress_after_each_commit(
+    neo4j: Neo4jContainer, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The import (not just the download) reports 'seed import:' lines.
+
+    A huge dump sat silent at "100%" for minutes on real hardware: the
+    wizard needs a percent while statements are applied. A schema statement
+    (auto-commit) and a data batch both count, and every import line comes
+    before the existing 'graph slice seeded' finish line.
+    """
+    # Arrange
+    os.environ["GRAPH_URL"] = _graph_url(neo4j)
+
+    # Act
+    with (
+        patch(
+            "src.ems_analyst_mcp.seed.urllib.request.urlopen",
+            return_value=_gzipped_response(MIXED_CYPHER_SCRIPT),
+        ),
+        caplog.at_level(logging.INFO),
+    ):
+        await seed_graph_neo4j("https://example.invalid/graph-neo4j.cypher.gz")
+
+    # Assert — constraint = 1 of 3 (33%), then the 2-statement batch commits -> 100%
+    messages = [r.message for r in caplog.records]
+    imports = [m for m in messages if m.startswith("seed import:")]
+    assert imports == [
+        "seed import: graph 33% (1 of 3 statements)",
+        "seed import: graph 100% (3 of 3 statements)",
+    ]
+    assert messages.index(imports[-1]) < messages.index("graph slice seeded")
 
 
 @pytest.mark.asyncio

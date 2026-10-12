@@ -4,7 +4,7 @@ import os
 from datetime import UTC, datetime
 from ipaddress import IPv4Address
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 import yaml
 
 
@@ -26,8 +26,13 @@ class Config(BaseModel):  # noqa: D101
 
 
 class _ConfigMap(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     local: Config
     beta: Config
+    # Reason: the launcher injects ENV=device-demo (hyphen) for every EMS
+    # service — the cfg key has to match that string, so it needs an alias.
+    device_demo: Config = Field(alias="device-demo")
 
 
 def load_config() -> Config:
@@ -55,6 +60,8 @@ def load_config() -> Config:
         match environment:
             case "beta":
                 return config_map.beta
+            case "device-demo":
+                return config_map.device_demo
             case _:
                 return config_map.local
 

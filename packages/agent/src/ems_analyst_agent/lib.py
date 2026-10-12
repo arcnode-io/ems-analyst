@@ -25,6 +25,7 @@ from .tools.compare_forecast_artifact import compare_forecast_to_actual
 from .tools.domain_mcp import create_mcp_server
 from .tools.forecast import get_forecast
 from .tools.geopolitical import get_energy_news
+from .tools.latest_value import get_latest_value
 from .tools.markets import get_market_data
 from .tools.telemetry_tools import (
     describe_site,
@@ -86,6 +87,7 @@ class Agent:
             Tool(get_topology),
             Tool(describe_site),
             Tool(get_device_status),
+            Tool(get_latest_value),
             Tool(explain_dispatch),
             Tool(query_timeseries),
             Tool(get_forecast),

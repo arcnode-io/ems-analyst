@@ -115,7 +115,9 @@ class ScopeFilter:
         last_reply = _last_assistant_text(message_history) if message_history else None
         if not last_reply:
             return False
-        return await self._max_cosine(f"{last_reply} {query}") >= self._context_threshold
+        return (
+            await self._max_cosine(f"{last_reply} {query}") >= self._context_threshold
+        )
 
 
 def _last_assistant_text(history: list[ModelMessage]) -> str | None:

@@ -5,7 +5,8 @@ from typing import Optional
 from mcp.server.fastmcp import FastMCP
 
 from .clients import GraphitiClient, RAGClient, make_embedder
-from .config import Config, load_config
+from .config import Config, NoneGraph, load_config
+from .instructions import example_queries, knowledge_instructions, verification_prompt
 from .models import SearchResults, Document, FactEvidence, CombinedResults
 
 
@@ -24,7 +25,6 @@ def create_server(config: Optional[Config] = None) -> FastMCP:
 
     mcp = FastMCP("Knowledge Graph MCP Server")
 
-    @mcp.tool()
     async def search_knowledge(query: str, limit: int = 10) -> SearchResults:
         """Search relationships in the scoped knowledge graph (ADR-026).
 
@@ -40,7 +40,6 @@ def create_server(config: Optional[Config] = None) -> FastMCP:
         finally:
             await client.close()
 
-    @mcp.tool()
     async def rag_search(query: str, limit: int = 10) -> list[Document]:
         """Search the complete markdown corpus using vector + lexical retrieval.
 
@@ -52,7 +51,6 @@ def create_server(config: Optional[Config] = None) -> FastMCP:
         client = RAGClient.from_env(embedder=embedder)
         return await client.search(query, limit)
 
-    @mcp.tool()
     async def verify_fact(statement: str, limit: int = 5) -> FactEvidence:
         """Retrieve knowledge-graph evidence relevant to a statement.
 
@@ -68,7 +66,6 @@ def create_server(config: Optional[Config] = None) -> FastMCP:
         finally:
             await client.close()
 
-    @mcp.tool()
     async def combined_search(query: str, limit: int = 10) -> CombinedResults:
         """Search both the knowledge graph and document vectors.
 
@@ -90,53 +87,28 @@ def create_server(config: Optional[Config] = None) -> FastMCP:
         finally:
             await graph_client.close()
 
-    @mcp.resource("knowledge://instructions")
-    async def knowledge_instructions() -> str:
-        """How to answer accurately using this knowledge base."""
-        return """
-        HOW TO USE THIS KNOWLEDGE BASE EFFECTIVELY:
+    # Reason: the graph tools raise "no graph backend configured" on a
+    # deployment without one — advertising them just burns the model's
+    # tool-call budget (and its guidance text told it to call them first).
+    graph = not isinstance(server_config.graph, NoneGraph)
+    mcp.add_tool(rag_search)
+    if graph:
+        for graph_tool in (search_knowledge, verify_fact, combined_search):
+            mcp.add_tool(graph_tool)
 
-        Step 1: Ground every claim in retrieved evidence.
-        Step 2: Use rag_search for self-contained lookups and source passages.
-        Step 3: Use search_knowledge / verify_fact for cross-document standard
-                supersession and multi-hop BESS chapter-5 control/incident chains.
-        Step 4: Use combined_search when those graph questions also need context.
-        Step 5: Cite your sources clearly: [Graph] or [Documents].
-        Step 6: If evidence is absent or weak, say so — do not guess.
-        """
+    @mcp.resource("knowledge://instructions")
+    async def knowledge_instructions_resource() -> str:
+        """How to answer accurately using this knowledge base."""
+        return knowledge_instructions(graph)
 
     @mcp.resource("knowledge://examples")
-    async def example_queries() -> str:
+    async def example_queries_resource() -> str:
         """Example patterns for effective knowledge retrieval."""
-        return """
-        EXAMPLE USAGE PATTERNS:
-
-        1. "What replaced CIP-006-7?"
-           → search_knowledge("CIP-006-7 superseded by")
-
-        2. "What Modbus function code implements Mask Write Register?"
-           → rag_search("Modbus Mask Write Register function code")
-
-        3. "How do BMS, EMS, PPC/SCADA, and fleet controls coordinate?"
-           → combined_search("BESS BMS EMS PPC SCADA fleet control hierarchy")
-
-        4. "Did limited telemetry contribute to the Victorian Big Battery fire?"
-           → verify_fact("Victorian Big Battery commissioning telemetry fire")
-        """
+        return example_queries(graph)
 
     @mcp.prompt("answer_with_verification")
     async def answer_with_verification() -> str:
         """Template for answering with evidence-grounded verification."""
-        return """
-        To answer any question accurately:
-
-        1. IDENTIFY key entities and claims.
-        2. Use rag_search() for flat lookups and supporting source passages.
-        3. Use search_knowledge() / verify_fact() for cross-document supersession
-           or BESS chapter-5 control/incident chains, and inspect the evidence.
-        4. Use combined_search() when those graph questions also need documents.
-        5. SYNTHESIZE with citations [Graph] or [Documents].
-        6. State clearly when evidence is missing rather than guessing.
-        """
+        return verification_prompt(graph)
 
     return mcp

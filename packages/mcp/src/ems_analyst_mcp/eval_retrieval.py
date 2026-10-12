@@ -53,7 +53,11 @@ async def _run_graph(client: GraphitiClient, case: GoldenQuery) -> QueryResult:
     """Score all required relationship links, rather than just any related hit."""
     facts = await client.search(case.query, limit=_SEARCH_LIMIT)
     ids = [fact.id for fact in facts]
-    expected = list(dict.fromkeys(fact_id for group in case.required_fact_groups for fact_id in group))
+    expected = list(
+        dict.fromkeys(
+            fact_id for group in case.required_fact_groups for fact_id in group
+        )
+    )
     coverage = sum(
         bool(set(group) & set(ids)) for group in case.required_fact_groups
     ) / len(case.required_fact_groups)

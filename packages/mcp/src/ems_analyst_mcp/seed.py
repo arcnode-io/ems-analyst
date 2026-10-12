@@ -47,6 +47,7 @@ from neo4j import (
 from .clients.graphiti_client import _split_neo4j_url
 from .clients.rag_client import KNOWLEDGE_TABLE
 from .config import Neo4jGraph, NeptuneGraph, NoneGraph
+from .seed_progress import ImportProgress
 
 logger = logging.getLogger(__name__)
 
@@ -378,6 +379,9 @@ async def seed_graph_neo4j(seed_url: str, e2e: bool = False) -> None:
         # finer step — vector keeps the 10% default.
         cypher_script = _fetch_gunzip(seed_url, "graph", granularity_pct=1)
         statements = [s.strip() for s in cypher_script.split(";\n") if s.strip()]
+        # Reason: the import is the long silent part of a big dump (the
+        # download is reported separately above) — one whole percent at a time.
+        progress = ImportProgress(logger, "graph", len(statements), granularity_pct=1)
 
         async with driver.session() as session:
             await _wipe_graph(session)
@@ -398,12 +402,14 @@ async def seed_graph_neo4j(seed_url: str, e2e: bool = False) -> None:
                         await tx.run(stmt)  # ty: ignore[invalid-argument-type]
 
                 await session.execute_write(_write)
+                progress.advance(len(pending))
 
             for stmt in statements:
                 if _is_schema_statement(stmt):
                     await _flush_data()
                     # Auto-commit: schema DDL can't share a tx with writes.
                     await session.run(stmt)  # ty: ignore[invalid-argument-type]
+                    progress.advance(1)
                 else:
                     data_batch.append(stmt)
                     if len(data_batch) >= _DATA_BATCH_SIZE:

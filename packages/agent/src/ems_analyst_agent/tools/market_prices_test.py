@@ -11,7 +11,12 @@ from datetime import UTC, datetime
 import pook
 import pytest
 
-from .market_prices import GRIDSTATUS_BASE_URL, MarketPricePoint, _InvalidApiKeyError, fetch_market_series
+from .market_prices import (
+    GRIDSTATUS_BASE_URL,
+    MarketPricePoint,
+    _InvalidApiKeyError,
+    fetch_market_series,
+)
 
 _DATASET = "ercot_spp_day_ahead_hourly"
 _START = datetime(2026, 7, 15, 0, tzinfo=UTC)

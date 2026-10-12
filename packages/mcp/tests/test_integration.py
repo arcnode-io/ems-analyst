@@ -170,7 +170,7 @@ class TestMCPServer:
     async def test_search_knowledge_tool_exists(self) -> None:
         """Test that search_knowledge tool is registered with server."""
         # Arrange
-        server = create_server()
+        server = create_server(config=_test_config())
 
         # Act
         tools = await server.list_tools()
@@ -235,7 +235,7 @@ class TestMCPServer:
     async def test_knowledge_instructions_resource_exists(self) -> None:
         """Test that knowledge instructions resource is available."""
         # Arrange
-        server = create_server()
+        server = create_server(config=_test_config())
 
         # Act
         resources = await server.list_resources()

@@ -10,3 +10,9 @@ beta:
   port: 8000
   e2e: true
   reload: false
+device-demo:
+  log_level: INFO
+  host: '0.0.0.0'
+  port: 8000
+  e2e: false
+  reload: false

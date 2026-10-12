@@ -27,6 +27,22 @@ demo:
   graph:
     backend: neo4j
 
+device-demo:
+  # The on-prem demo container (arcnode-demo bridge network): the same
+  # stage name the launcher injects as ENV for every EMS service. No graph
+  # backend — nothing runs one on the box — so only rag_search is
+  # advertised. Ollama is reached via host.docker.internal because the
+  # box's own public IP doesn't loop back from inside a bridged container.
+  log_level: INFO
+  e2e: false
+  settings:
+    llm_provider: ollama
+    ollama_base_url: http://host.docker.internal:11434/v1
+    ollama_chat_model: gemma4:26b
+    ollama_embedding_model: qwen3-embedding:4b
+  graph:
+    backend: none
+
 beta:
   log_level: INFO
   settings:

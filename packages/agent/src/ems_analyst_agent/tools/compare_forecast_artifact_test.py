@@ -21,7 +21,10 @@ import pytest
 from ..schemas import LineSpec, TableSpec
 from ..server_client import ForecastPoint, ForecastSeries, ServerClient
 from ._common import _TelemetryDeps
-from .compare_forecast_artifact import build_compare_forecast, compare_forecast_to_actual
+from .compare_forecast_artifact import (
+    build_compare_forecast,
+    compare_forecast_to_actual,
+)
 from .market_prices import GRIDSTATUS_BASE_URL
 
 
@@ -30,6 +33,7 @@ class _FakeCtx:
     """Minimal RunContext stand-in — the wrapper only ever reads `.deps`."""
 
     deps: _TelemetryDeps
+
 
 _T0 = datetime(2026, 1, 1, 0, tzinfo=UTC)
 _QUERY_URL = f"{GRIDSTATUS_BASE_URL}/datasets/ercot_spp_day_ahead_hourly/query"
@@ -52,9 +56,9 @@ def _forecast(values: list[float]) -> ForecastSeries:
 def _actual_rows(values: list[float]) -> list[dict[str, object]]:
     return [
         {
-            "interval_start_utc": (_T0 + timedelta(hours=i)).isoformat().replace(
-                "+00:00", "Z"
-            ),
+            "interval_start_utc": (_T0 + timedelta(hours=i))
+            .isoformat()
+            .replace("+00:00", "Z"),
             "spp": v,
             "location": "HB_NORTH",
         }

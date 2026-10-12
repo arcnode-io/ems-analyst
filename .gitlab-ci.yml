@@ -1,7 +1,7 @@
 stages:
   - check
   - aggregate
-  - deploy
+  - publish
   - mirror
 
 # Per-package job template. Each concrete job sets PKG=mcp|agent|server;
@@ -65,12 +65,24 @@ aggregate-coverage:
         coverage_format: cobertura
         path: coverage.xml
 
-deploy:
-  stage: deploy
+# Canonical owner of public.ecr.aws/y1d2j6a8/ems-analyst-server — the image
+# customer boxes (platform-api's composes) pull. Main only: a branch
+# pipeline must never overwrite the tag customers pull. The :sha tag is the
+# rollback handle for a bad :latest.
+publish:
+  stage: publish
   only: [main]
-  needs: [aggregate-coverage]
+  dependencies: []
   script:
-    - cd /home/admin/arcnode/ems-analyst && git pull --ff-only && cd /home/admin/docker/ems-analyst-server && docker compose up -d --build --force-recreate
+    - aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin public.ecr.aws
+    - docker build -t public.ecr.aws/y1d2j6a8/ems-analyst-server:latest -t public.ecr.aws/y1d2j6a8/ems-analyst-server:$CI_COMMIT_SHORT_SHA .
+    - docker push public.ecr.aws/y1d2j6a8/ems-analyst-server:latest
+    - docker push public.ecr.aws/y1d2j6a8/ems-analyst-server:$CI_COMMIT_SHORT_SHA
+  # Reason: the runner is a shared shell executor, so a login left here becomes every other
+  # job's problem once the 12-hour token expires — Docker then presents the dead token instead
+  # of pulling anonymously. after_script runs even when the push fails.
+  after_script:
+    - docker logout public.ecr.aws
 
 mirror:
   stage: mirror

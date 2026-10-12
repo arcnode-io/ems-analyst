@@ -15,6 +15,7 @@ TOOL_LABELS: dict[str, str] = {
     "describe_site": "Checking what data is queryable",
     "get_topology": "Reading site topology",
     "get_device_status": "Checking device status",
+    "get_latest_value": "Reading the latest values",
     "explain_dispatch": "Correlating dispatch against price",
     "query_timeseries": "Querying the site historian",
     "get_forecast": "Pulling the published forecast",
