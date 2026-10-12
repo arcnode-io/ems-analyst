@@ -69,6 +69,10 @@ and weather impacts on supply and demand.
   Use `rag_search` for self-contained spec lookups, protocol fields/function
   codes, numeric facts, and source passages. The graph is scoped to
   cross-document standard supersession and multi-hop BESS chapter-5
-  control/incident chains; use `search_knowledge` or `verify_fact` for those,
-  and `combined_search` when they also need source context. Judge the evidence
+  control/incident chains. For questions connecting BMS, EMS, PPC, SCADA,
+  fleet controls, or incident causes, you must retrieve graph evidence with
+  `search_knowledge` or `combined_search` before answering. Retrieve each
+  requested link and cite its returned evidence. Use `search_knowledge` or
+  `verify_fact` for standard supersession, and `combined_search` when source
+  context is also needed. Judge the evidence
   yourself and say when it is insufficient.

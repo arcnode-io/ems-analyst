@@ -63,6 +63,22 @@ def score_answer(
     }
 
 
+def _resume_results(output: Path, model_name: str) -> list[DomainResult]:
+    saved = output / "agent-results.json"
+    if not saved.exists():
+        return []
+    previous = json.loads(saved.read_text())
+    if previous["model"] != model_name:
+        raise ValueError(
+            "evaluation output belongs to another model; choose a new output directory"
+        )
+    results: list[DomainResult] = previous["results"]
+    for row in results:
+        if "passed" not in row:
+            row["passed"] = bool(row.get("pass", False))
+    return results
+
+
 async def run(model_name: str, base_url: str, output: Path) -> None:
     """Evaluate sequentially so a shared local model is not overloaded."""
     if not os.environ.get("GRAPH_URL") or not os.environ.get("VECTOR_URL"):
@@ -83,8 +99,12 @@ async def run(model_name: str, base_url: str, output: Path) -> None:
     agent = Agent(model, toolsets=[toolset], system_prompt=load_system_prompt())
     results: list[DomainResult] = []
     output.mkdir(parents=True, exist_ok=True)
+    results = _resume_results(output, model_name)
+    completed = {row["name"] for row in results}
     async with agent:
         for case in DOMAIN_CASES:
+            if case.name in completed:
+                continue
             started = time.monotonic()
             result = await agent.run(case.prompt)
             messages = result.all_messages()
