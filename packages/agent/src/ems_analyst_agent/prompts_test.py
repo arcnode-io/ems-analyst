@@ -33,3 +33,12 @@ class TestPromptLoader:
         # Assert
         assert isinstance(actual, str)
         assert len(actual) > 20
+
+    def test_system_prompt_says_missing_facts_are_not_searched_for(self) -> None:
+        """A fact the site context lacks gets an honest 'I don't have that', not a tool hunt."""
+        # Act
+        actual = load_system_prompt()
+
+        # Assert
+        assert "don't have" in actual
+        assert "don't search" in actual.lower() or "do not search" in actual.lower()

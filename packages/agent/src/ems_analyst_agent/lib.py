@@ -21,6 +21,7 @@ from .memory import MemoryService
 from .prompts import load_system_prompt
 from .schemas import AnalystMessage, TextContent
 from .server_client import ServerClient
+from .site_context import site_context_text
 from .tools.compare_forecast_artifact import compare_forecast_to_actual
 from .tools.domain_mcp import create_mcp_server
 from .tools.forecast import get_forecast
@@ -120,6 +121,14 @@ class Agent:
                 f"{market.wholesale_market.upper()} with settlement point "
                 f"{market.settlement_point.value}. Scope LMP and market-data "
                 f"queries to this hub unless the user explicitly asks otherwise."
+            )
+
+        @self.agent.system_prompt
+        def inject_site_context() -> str:
+            return site_context_text(
+                site_id=config.site_id,
+                settlement_point=market.settlement_point.value,
+                location=config.location,
             )
 
         @self.agent.system_prompt
