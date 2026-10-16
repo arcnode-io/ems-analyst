@@ -67,31 +67,6 @@ def test_device_demo_stage_reaches_ollama_via_the_docker_host() -> None:
     assert cfg.settings.ollama_base_url == "http://host.docker.internal:11434/v1"
 
 
-def test_load_config_location_defaults_unset_and_customer_can_set_it(
-    tmp_path: Path,
-) -> None:
-    """Location is never invented: unset by default, set only by a customer overlay."""
-    # Arrange — no location in the baked device-demo stage
-    env = {k: v for k, v in os.environ.items() if k != "CFG_CUSTOMER_PATH"}
-    env["ENV"] = "device-demo"
-    with patch.dict(os.environ, env, clear=True):
-        # Act
-        unset = load_config()
-    customer = tmp_path / "cfg.customer.yml"
-    customer.write_text('location: "Dallas, TX"\n')
-    with patch.dict(
-        os.environ,
-        {"ENV": "device-demo", "CFG_CUSTOMER_PATH": str(customer)},
-        clear=False,
-    ):
-        # Act
-        set_by_customer = load_config()
-
-    # Assert
-    assert unset.location is None
-    assert set_by_customer.location == "Dallas, TX"
-
-
 def test_load_config_customer_merges_market_block(tmp_path: Path) -> None:
     """cfg.customer.yml at CFG_CUSTOMER_PATH wins over baked defaults."""
     # Arrange
