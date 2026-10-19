@@ -68,9 +68,15 @@ class ForecastsService:
         first = rows[0]
         model_name = str(first["model_name"])
         model_rows = [r for r in rows if r["model_name"] == model_name]
+        # Reason: each daily run writes the next 24h, so a window spanning two
+        # runs mixes versions. Keep the latest run only, so the label is true.
+        latest_version = max(int(r["model_version"]) for r in model_rows)
+        latest_rows = [
+            r for r in model_rows if int(r["model_version"]) == latest_version
+        ]
         points = [
             ForecastPoint(forecast_for=r["forecast_for"], value=r["value"])
-            for r in model_rows
+            for r in latest_rows
         ]
         return ForecastSeries(
             site_id=site_id,
@@ -78,7 +84,7 @@ class ForecastsService:
             measurement=measurement,
             unit=str(first["unit"]),
             model_name=model_name,
-            model_version=int(first["model_version"]),
+            model_version=latest_version,
             points=points,
         )
 
