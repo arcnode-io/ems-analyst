@@ -23,10 +23,11 @@ class ForecastSeries(BaseModel):
     `site_id` is the customer site the caller asked for.
     `settlement_point` is the ERCOT market hub the forecast is actually
     keyed on — surfaced so the HMI can show which hub drives the curve.
+    None means the deploy has no market (not enrolled), points is empty.
     """
 
     site_id: str
-    settlement_point: str
+    settlement_point: str | None
     measurement: str
     unit: str
     model_name: str

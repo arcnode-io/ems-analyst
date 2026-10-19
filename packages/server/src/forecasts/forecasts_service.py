@@ -32,7 +32,7 @@ class ForecastsService:
     async def get(
         self,
         site_id: str,
-        settlement_point: str,
+        settlement_point: str | None,
         measurement: str,
         start: datetime,
         end: datetime,
@@ -47,6 +47,9 @@ class ForecastsService:
         whichever model_name sorts first — one forecast surface per
         (settlement_point, measurement) to start.
         """
+        # Reason: no market means no hub to key on, so there's nothing to read.
+        if settlement_point is None:
+            return _empty_series(site_id, None, measurement)
         url = self._postgres_url or os.environ[_TIMESERIES_URL_ENV]
         async with connect(url) as conn:
             rows = await conn.fetch(
@@ -61,15 +64,7 @@ class ForecastsService:
                 end,
             )
         if not rows:
-            return ForecastSeries(
-                site_id=site_id,
-                settlement_point=settlement_point,
-                measurement=measurement,
-                unit="",
-                model_name="",
-                model_version=0,
-                points=[],
-            )
+            return _empty_series(site_id, settlement_point, measurement)
         first = rows[0]
         model_name = str(first["model_name"])
         model_rows = [r for r in rows if r["model_name"] == model_name]
@@ -86,3 +81,18 @@ class ForecastsService:
             model_version=int(first["model_version"]),
             points=points,
         )
+
+
+def _empty_series(
+    site_id: str, settlement_point: str | None, measurement: str
+) -> ForecastSeries:
+    """Envelope with no points, keeping the JSON shape stable."""
+    return ForecastSeries(
+        site_id=site_id,
+        settlement_point=settlement_point,
+        measurement=measurement,
+        unit="",
+        model_name="",
+        model_version=0,
+        points=[],
+    )

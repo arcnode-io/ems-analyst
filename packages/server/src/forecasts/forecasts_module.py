@@ -11,6 +11,7 @@ class ForecastsModule:
 
     Deploy site_id + settlement_point both come from the agent cfg
     (`site_id`, `market.settlement_point`) — single source of truth.
+    No market in cfg means no hub: the endpoint reports null and no points.
     Forecasts are hub-keyed; the response echoes the site.
     """
 
@@ -20,5 +21,7 @@ class ForecastsModule:
         self.router = ForecastsController(
             ForecastsService(),
             site_id=config.site_id,
-            settlement_point=str(config.market.settlement_point),
+            settlement_point=(
+                str(config.market.settlement_point) if config.market else None
+            ),
         ).router
