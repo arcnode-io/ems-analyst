@@ -144,3 +144,51 @@ class TestForecastsService:
 
         # Assert
         assert actual.points == []
+
+
+class TestForecastsServiceSingleVersion:
+    """AAA — a window spanning two model runs reports only the latest version."""
+
+    @pytest.mark.asyncio
+    async def test_get_keeps_latest_model_version_only(
+        self, postgres_url: str, forecasts_service: ForecastsService
+    ) -> None:
+        # Arrange — two daily runs, adjacent hours, one window covering both
+        await _seed_forecasts_table(postgres_url)
+        base = datetime.now(UTC).replace(microsecond=0) + timedelta(days=30)
+        older_for = base
+        newer_for = base + timedelta(hours=1)
+        await _insert_forecast(
+            postgres_url,
+            forecast_for=older_for,
+            settlement_point="HB_NORTH",
+            measurement="dam_lmp_price",
+            unit="usd_per_mwh",
+            value=10.0,
+            model_name="dam-lmp-forecast-single-version",
+            model_version=7,
+        )
+        await _insert_forecast(
+            postgres_url,
+            forecast_for=newer_for,
+            settlement_point="HB_NORTH",
+            measurement="dam_lmp_price",
+            unit="usd_per_mwh",
+            value=20.0,
+            model_name="dam-lmp-forecast-single-version",
+            model_version=8,
+        )
+
+        # Act
+        actual = await forecasts_service.get(
+            site_id="demo-site",
+            settlement_point="HB_NORTH",
+            measurement="dam_lmp_price",
+            start=older_for - timedelta(hours=1),
+            end=newer_for + timedelta(hours=1),
+        )
+
+        # Assert — the v8 run's points only, labelled v8
+        assert actual.model_version == 8
+        assert [p.forecast_for for p in actual.points] == [newer_for]
+        assert [p.value for p in actual.points] == [20.0]
