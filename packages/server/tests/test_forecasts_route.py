@@ -154,3 +154,26 @@ class TestForecastsRouteNoMarket:
         assert body["site_id"] == _DEPLOY_SITE
         assert body["settlement_point"] is None
         assert body["points"] == []
+
+
+class TestForecastsRouteAnalystAlias:
+    """AAA — /analyst/forecast serves the same series as /forecast (nginx path)."""
+
+    def test_analyst_path_returns_same_series(
+        self, client: tuple[TestClient, _FakeForecastsService]
+    ) -> None:
+        # Arrange
+        c, _ = client
+        params = {
+            "measurement": "dam_lmp_price",
+            "start": "2026-05-17T00:00:00Z",
+            "end": "2026-05-18T00:00:00Z",
+        }
+
+        # Act
+        response = c.get("/analyst/forecast", params=params)
+        plain = c.get("/forecast", params=params)
+
+        # Assert
+        assert response.status_code == 200
+        assert response.json() == plain.json()

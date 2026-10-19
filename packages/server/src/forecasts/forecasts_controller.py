@@ -1,8 +1,12 @@
-"""GET /forecast — deterministic forecast reads.
+"""GET /analyst/forecast (+ /forecast alias) — deterministic forecast reads.
 
 Single-site deploy: the controller holds both the deploy's site_id
 (echoed in the response) and its settlement_point (the ERCOT hub the
 forecast is keyed on). Neither is in the path.
+
+/analyst/forecast is what the HMI calls through nginx (which only
+proxies /analyst/*). /forecast stays for the agent, which calls it
+in-process with no nginx in between.
 """
 
 from datetime import datetime
@@ -25,7 +29,7 @@ class ForecastsController(Routable):
         self.settlement_point = settlement_point
 
     @get(
-        "/forecast",
+        "/analyst/forecast",
         response_model=ForecastSeries,
         tags=["Forecasts"],
         responses={200: {"description": "Series of (forecast_for, value) points"}},
@@ -41,6 +45,27 @@ class ForecastsController(Routable):
         Query runs against the deploy's settlement_point; the response
         echoes the deploy site_id.
         """
+        return await self._get(measurement, start, end)
+
+    @get(
+        "/forecast",
+        response_model=ForecastSeries,
+        tags=["Forecasts"],
+        responses={200: {"description": "Series of (forecast_for, value) points"}},
+        include_in_schema=False,
+    )
+    async def list_forecast_unprefixed(
+        self,
+        measurement: str,
+        start: datetime,
+        end: datetime,
+    ) -> ForecastSeries:
+        """Alias of /analyst/forecast — the agent calls this directly, no nginx."""
+        return await self._get(measurement, start, end)
+
+    async def _get(
+        self, measurement: str, start: datetime, end: datetime
+    ) -> ForecastSeries:
         return await self.service.get(
             site_id=self.site_id,
             settlement_point=self.settlement_point,
