@@ -121,3 +121,36 @@ class TestForecastsRoute:
         call = fake.calls[0]
         assert call["site_id"] == _DEPLOY_SITE
         assert call["settlement_point"] == _DEPLOY_HUB
+
+
+class TestForecastsRouteNoMarket:
+    """AAA — a deploy with no market reports null hub + empty points, no DB read."""
+
+    def test_no_market_returns_null_hub_and_empty_points(self) -> None:
+        # Arrange — unused postgres URL: the service must not touch the DB
+        app = FastAPI()
+        app.include_router(
+            ForecastsController(
+                ForecastsService(postgres_url="postgres://unused"),
+                site_id=_DEPLOY_SITE,
+                settlement_point=None,
+            ).router
+        )
+        c = TestClient(app)
+
+        # Act
+        response = c.get(
+            "/forecast",
+            params={
+                "measurement": "dam_lmp_price",
+                "start": "2026-05-17T00:00:00Z",
+                "end": "2026-05-18T00:00:00Z",
+            },
+        )
+
+        # Assert
+        assert response.status_code == 200
+        body = response.json()
+        assert body["site_id"] == _DEPLOY_SITE
+        assert body["settlement_point"] is None
+        assert body["points"] == []

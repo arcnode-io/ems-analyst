@@ -15,7 +15,7 @@ from pydantic_ai import Agent as PydanticAgent, RunContext, Tool
 from pydantic_ai.messages import ModelMessage
 from ems_analyst_mcp.clients import make_embedder
 
-from .config import chat_model, load_config
+from .config import MarketConfig, chat_model, load_config
 from .device_api import DeviceApiClient
 from .memory import MemoryService
 from .prompts import load_system_prompt
@@ -115,12 +115,7 @@ class Agent:
 
         @self.agent.system_prompt
         def inject_market_context() -> str:
-            return (
-                f"Wholesale market context: this deployment participates in "
-                f"{market.wholesale_market.upper()} with settlement point "
-                f"{market.settlement_point.value}. Scope LMP and market-data "
-                f"queries to this hub unless the user explicitly asks otherwise."
-            )
+            return market_context(market)
 
         @self.agent.system_prompt
         def inject_focused_device(ctx: RunContext[AgentDeps]) -> str:
@@ -210,6 +205,18 @@ class Agent:
             focused_device_id=focused_device_id,
         )
         return run_turn_stream(self.agent, deps, prompt, message_history)
+
+
+def market_context(market: MarketConfig | None) -> str:
+    """Prompt line scoping market queries to the hub; empty when not enrolled."""
+    if market is None:
+        return ""
+    return (
+        f"Wholesale market context: this deployment participates in "
+        f"{market.wholesale_market.upper()} with settlement point "
+        f"{market.settlement_point.value}. Scope LMP and market-data "
+        f"queries to this hub unless the user explicitly asks otherwise."
+    )
 
 
 def _assert_read_only(tools: list[Tool[object]]) -> None:

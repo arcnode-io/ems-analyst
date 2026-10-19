@@ -17,7 +17,7 @@ class ForecastsController(Routable):
     """Routes a windowed forecast query through to ForecastsService."""
 
     def __init__(
-        self, service: ForecastsService, site_id: str, settlement_point: str
+        self, service: ForecastsService, site_id: str, settlement_point: str | None
     ) -> None:
         super().__init__()
         self.service = service

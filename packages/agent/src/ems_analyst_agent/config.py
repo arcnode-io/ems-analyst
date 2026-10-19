@@ -58,7 +58,7 @@ class StageConfig(BaseModel):
     e2e: bool = False
     site_id: str
     settings: ProviderSettings
-    market: MarketConfig
+    market: MarketConfig | None = None
 
 
 class _ConfigMap(BaseModel):
@@ -79,7 +79,7 @@ class Config(BaseModel):
     e2e: bool = False
     site_id: str
     settings: ProviderSettings
-    market: MarketConfig
+    market: MarketConfig | None = None
 
 
 def load_config() -> Config:

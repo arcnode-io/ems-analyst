@@ -14,8 +14,9 @@ from ems_analyst_agent.config import (
 )
 
 
-def test_load_config_returns_baked_defaults_without_customer_file() -> None:
-    """Local stage in cfg.defaults.yml: ERCOT + HB_NORTH dev defaults."""
+def test_load_config_has_no_market_without_customer_file() -> None:
+    """Market is customer data: stage defaults carry none, so an un-enrolled
+    deploy with no overlay reads as market=None, never a baked-in hub."""
     # Arrange
     env = {k: v for k, v in os.environ.items() if k != "CFG_CUSTOMER_PATH"}
     env["ENV"] = "local"
@@ -24,8 +25,7 @@ def test_load_config_returns_baked_defaults_without_customer_file() -> None:
         cfg = load_config()
 
     # Assert
-    assert cfg.market.wholesale_market == "ercot"
-    assert cfg.market.settlement_point == ErcotSettlementPoint.HB_NORTH
+    assert cfg.market is None
 
 
 def test_load_config_resolves_device_demo_stage() -> None:
@@ -81,6 +81,7 @@ def test_load_config_customer_merges_market_block(tmp_path: Path) -> None:
         cfg = load_config()
 
     # Assert — customer wins
+    assert cfg.market is not None
     assert cfg.market.settlement_point == ErcotSettlementPoint.HB_HOUSTON
     # Provider settings untouched (customer only mentioned market)
     assert cfg.settings.llm_provider == "ollama"
@@ -117,7 +118,7 @@ def test_load_config_ignores_missing_customer_file(tmp_path: Path) -> None:
         cfg = load_config()
 
     # Assert
-    assert cfg.market.settlement_point == ErcotSettlementPoint.HB_NORTH
+    assert cfg.market is None
 
 
 def test_deep_merge_overlays_nested_dicts() -> None:
